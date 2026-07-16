@@ -107,6 +107,22 @@
         .section-title { font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: #9aa0a6; }
         .icon-btn { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 8px 4px; border-radius: 9999px; border: 1px solid #5f6368; color: #e8eaed; background: transparent; transition: background .15s; }
         .icon-btn:hover { background: rgba(255,255,255,0.05); }
+        .icon-btn:disabled:hover { background: transparent; }
+        .icon-btn.busy .material-symbols-rounded { animation: spin 1s linear infinite; }
+
+        button:disabled, .icon-btn:disabled, select:disabled, input:disabled {
+            opacity: 0.35; cursor: not-allowed;
+        }
+
+        button:focus-visible, select:focus-visible, .point-chip:focus-visible {
+            outline: 2px solid #8ab4f8; outline-offset: 2px;
+        }
+
+        input[type="range"]:disabled::-webkit-slider-thumb { background: #80868b; }
+        input[type="range"]:disabled::-moz-range-thumb { background: #80868b; }
+
+        #status-bar { cursor: pointer; }
+        #status-bar[data-loading="true"] { cursor: default; }
     </style>
 </head>
 <body>
@@ -145,10 +161,10 @@
                     </select>
                 </div>
                 <div class="grid grid-cols-2 gap-2 mb-4">
-                    <button id="remove-model-btn" class="icon-btn !text-[#f28b82] hover:!bg-[#f28b82]/10">
+                    <button id="remove-model-btn" class="icon-btn !text-[#f28b82] hover:!bg-[#f28b82]/10" title="Remove the loaded model">
                         <span class="material-symbols-rounded text-[16px]">delete</span>Remove
                     </button>
-                    <button id="default-model-btn" class="icon-btn">
+                    <button id="default-model-btn" class="icon-btn" title="Load the sample surface">
                         <span class="material-symbols-rounded text-[16px]">deployed_code</span>Default
                     </button>
                 </div>
@@ -161,22 +177,22 @@
                     <option value="custom">Custom</option>
                 </select>
                 <div class="grid grid-cols-3 gap-2 mb-1">
-                    <div><div class="text-[10px] text-gray-500 mb-0.5">Optimal ≤ mm</div><input type="number" id="cfg-z1" step="0.5" min="0.1"></div>
-                    <div><div class="text-[10px] text-gray-500 mb-0.5">Safe ≤ mm</div><input type="number" id="cfg-z2" step="0.5" min="0.1"></div>
-                    <div><div class="text-[10px] text-gray-500 mb-0.5">Marginal ≤ mm</div><input type="number" id="cfg-z3" step="0.5" min="0.1"></div>
+                    <div><div class="text-[10px] text-gray-500 mb-0.5">Optimal ≤ mm</div><input type="number" id="cfg-z1" step="0.5" min="0.1" aria-label="Optimal depth threshold in millimeters"></div>
+                    <div><div class="text-[10px] text-gray-500 mb-0.5">Safe ≤ mm</div><input type="number" id="cfg-z2" step="0.5" min="0.1" aria-label="Safe depth threshold in millimeters"></div>
+                    <div><div class="text-[10px] text-gray-500 mb-0.5">Marginal ≤ mm</div><input type="number" id="cfg-z3" step="0.5" min="0.1" aria-label="Marginal depth threshold in millimeters"></div>
                 </div>
                 <div class="grid grid-cols-3 gap-2 mb-4">
-                    <div><div class="text-[10px] text-gray-500 mb-0.5">Limit ≤ mm</div><input type="number" id="cfg-z4" step="0.5" min="0.1"></div>
-                    <div><div class="text-[10px] text-gray-500 mb-0.5">Max κ mm⁻¹</div><input type="number" id="cfg-kappa" step="0.005" min="0.005"></div>
-                    <div><div class="text-[10px] text-gray-500 mb-0.5">Max θ deg</div><input type="number" id="cfg-angle" step="5" min="5" max="85"></div>
+                    <div><div class="text-[10px] text-gray-500 mb-0.5">Limit ≤ mm</div><input type="number" id="cfg-z4" step="0.5" min="0.1" aria-label="Depth limit threshold in millimeters"></div>
+                    <div><div class="text-[10px] text-gray-500 mb-0.5">Max κ mm⁻¹</div><input type="number" id="cfg-kappa" step="0.005" min="0.005" aria-label="Maximum curvature kappa in inverse millimeters"></div>
+                    <div><div class="text-[10px] text-gray-500 mb-0.5">Max θ deg</div><input type="number" id="cfg-angle" step="5" min="5" max="85" aria-label="Maximum incidence angle theta in degrees"></div>
                 </div>
 
                 <!-- ANALYSIS -->
                 <div class="section-title mb-2">Analysis</div>
                 <div class="flex mb-2" role="group" aria-label="View mode">
-                    <button class="seg-btn seg-active" data-viewmode="0">Depth</button>
-                    <button class="seg-btn" data-viewmode="1">Angle</button>
-                    <button class="seg-btn" data-viewmode="2">Stretch</button>
+                    <button class="seg-btn seg-active" data-viewmode="0" aria-pressed="true">Depth</button>
+                    <button class="seg-btn" data-viewmode="1" aria-pressed="false">Angle</button>
+                    <button class="seg-btn" data-viewmode="2" aria-pressed="false">Stretch</button>
                 </div>
                 <div class="flex justify-between items-center mb-1.5 mt-3">
                     <label for="contour-slider" class="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Contour Interval</label>
@@ -184,10 +200,10 @@
                 </div>
                 <input type="range" id="contour-slider" min="0.25" max="2" step="0.25" value="1" class="mb-3" />
                 <div class="grid grid-cols-2 gap-2 mb-4">
-                    <button id="auto-spot-btn" class="icon-btn">
+                    <button id="auto-spot-btn" class="icon-btn" title="Search the surface for the pose with the most printable area">
                         <span class="material-symbols-rounded text-[16px]">travel_explore</span>Best Spot
                     </button>
-                    <button id="axis-view-btn" class="icon-btn">
+                    <button id="axis-view-btn" class="icon-btn" disabled title="Click a surface point first">
                         <span class="material-symbols-rounded text-[16px]">center_focus_strong</span>Print View
                     </button>
                 </div>
@@ -198,39 +214,40 @@
                         <div class="section-title">Print Preview</div>
                         <div class="text-[10px] text-gray-500 mt-0.5">Ink fades with depth &amp; slope</div>
                     </div>
-                    <button id="print-toggle" role="switch" aria-checked="false"
+                    <button id="print-toggle" role="switch" aria-checked="false" disabled
+                        title="Click a surface point first"
                         class="relative w-[46px] h-7 rounded-full transition-colors shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#8ab4f8]" style="background:#5f6368">
                         <span id="print-toggle-thumb" class="absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow transition-transform" style="transform: translateX(0)"></span>
                     </button>
                 </div>
                 <div class="flex gap-2 mb-2">
-                    <label class="icon-btn flex-1 cursor-pointer">
+                    <label class="icon-btn flex-1 cursor-pointer" title="Replaces the demo flowers with your image">
                         <span class="material-symbols-rounded text-[16px]">image</span>
                         <span id="art-label">Artwork (PNG/JPG)</span>
                         <input type="file" id="art-input" accept="image/*" class="hidden" />
                     </label>
-                    <button id="art-clear-btn" class="icon-btn !w-9 shrink-0 !px-0" title="Back to demo flowers">
+                    <button id="art-clear-btn" class="icon-btn !w-9 shrink-0 !px-0" disabled aria-label="Clear artwork, back to demo flowers" title="Back to demo flowers">
                         <span class="material-symbols-rounded text-[16px]">close</span>
                     </button>
                 </div>
                 <div class="grid grid-cols-2 gap-3 mb-4">
                     <div>
                         <div class="flex justify-between text-[10px] text-gray-500 mb-1"><span>Width</span><span id="art-size-val">40 mm</span></div>
-                        <input type="range" id="art-size" min="10" max="120" step="2" value="40">
+                        <input type="range" id="art-size" min="10" max="120" step="2" value="40" disabled title="Upload artwork to enable">
                     </div>
                     <div>
                         <div class="flex justify-between text-[10px] text-gray-500 mb-1"><span>Rotation</span><span id="art-rot-val">0°</span></div>
-                        <input type="range" id="art-rot" min="0" max="360" step="5" value="0">
+                        <input type="range" id="art-rot" min="0" max="360" step="5" value="0" disabled title="Upload artwork to enable">
                     </div>
                 </div>
 
                 <!-- EXPORT -->
                 <div class="section-title mb-2">Export</div>
                 <div class="grid grid-cols-2 gap-2">
-                    <button id="snapshot-btn" class="icon-btn">
+                    <button id="snapshot-btn" class="icon-btn" title="Save the current view as a PNG">
                         <span class="material-symbols-rounded text-[16px]">photo_camera</span>Snapshot
                     </button>
-                    <button id="dxf-btn" class="icon-btn">
+                    <button id="dxf-btn" class="icon-btn" disabled title="Click a surface point first">
                         <span class="material-symbols-rounded text-[16px]">polyline</span>Boundary DXF
                     </button>
                 </div>
@@ -243,23 +260,23 @@
                     </div>
                     <div id="points-row" class="flex flex-wrap gap-1.5 mb-3"></div>
                     <div class="grid grid-cols-2 gap-2">
-                        <div class="bg-white/5 rounded-2xl p-2.5">
+                        <div class="bg-white/5 rounded-2xl p-2.5" title="Deepest point on the visible, front-facing surface relative to the clicked reference point">
                             <div class="text-[10px] text-gray-400 mb-0.5">Max Depth (Visible)</div>
                             <div class="text-base font-medium text-gray-100"><span id="stat-max">--</span> <span class="text-[10px] font-normal text-gray-500">mm</span></div>
                         </div>
-                        <div class="bg-white/5 rounded-2xl p-2.5">
+                        <div class="bg-white/5 rounded-2xl p-2.5" title="Share of visible surface deeper than the Safe threshold">
                             <div class="text-[10px] text-gray-400 mb-0.5">Beyond Safe Zone</div>
                             <div class="text-base font-medium text-gray-100"><span id="stat-over">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
                         </div>
-                        <div class="bg-white/5 rounded-2xl p-2.5">
+                        <div class="bg-white/5 rounded-2xl p-2.5" title="Share of visible surface with curvature at or above the machine's max κ">
                             <div class="text-[10px] text-gray-400 mb-0.5">Over-Curvature (κ)</div>
                             <div class="text-base font-medium text-gray-100"><span id="stat-curv">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
                         </div>
-                        <div class="bg-white/5 rounded-2xl p-2.5">
+                        <div class="bg-white/5 rounded-2xl p-2.5" title="Share of visible surface tilted beyond the machine's max incidence angle θ">
                             <div class="text-[10px] text-gray-400 mb-0.5">Steep Angle (θ)</div>
                             <div class="text-base font-medium text-gray-100"><span id="stat-angle">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
                         </div>
-                        <div class="bg-white/5 rounded-2xl p-2.5 col-span-2">
+                        <div class="bg-white/5 rounded-2xl p-2.5 col-span-2" title="Share of visible surface with Gaussian curvature high enough that artwork will distort or pucker when printed flat">
                             <div class="text-[10px] text-gray-400 mb-0.5">Non-Developable (|K|)</div>
                             <div class="text-base font-medium text-gray-100"><span id="stat-gauss">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
                         </div>
@@ -326,9 +343,9 @@
                 class="interactive absolute right-2 bottom-4 w-14 h-14 rounded-2xl bg-[#2d2e31] hover:bg-[#3c4043] active:scale-95 transition-all shadow-elevation-3 border border-[#3c4043] flex items-center justify-center text-[#8ab4f8]">
                 <span class="material-symbols-rounded text-2xl">restart_alt</span>
             </button>
-            <div id="status-bar" class="bg-[#e8eaed] text-[#202124] text-sm px-5 py-3 rounded-xl shadow-elevation-3 interactive snackbar-visible flex items-center min-w-[300px]">
+            <div id="status-bar" title="Click to dismiss" class="bg-[#e8eaed] text-[#202124] text-sm px-5 py-3 rounded-xl shadow-elevation-3 interactive snackbar-visible flex items-center min-w-[300px]">
                 <span class="loader" id="loader-icon"></span>
-                <span id="status-text" class="ml-2">Initializing...</span>
+                <span id="status-text" class="ml-2" role="status" aria-live="polite" aria-atomic="true">Initializing...</span>
             </div>
         </div>
     </div>
@@ -617,6 +634,7 @@
             document.getElementById('art-clear-btn').addEventListener('click', clearArtwork);
             document.getElementById('art-size').addEventListener('input', onArtParamChange);
             document.getElementById('art-rot').addEventListener('input', onArtParamChange);
+            document.getElementById('status-bar').addEventListener('click', dismissStatus);
             document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', onViewModeClick));
             ['cfg-z1','cfg-z2','cfg-z3','cfg-z4','cfg-kappa','cfg-angle'].forEach(id => {
                 document.getElementById(id).addEventListener('change', onCfgInputChange);
@@ -685,10 +703,19 @@
         function onViewModeClick(e) {
             const mode = parseInt(e.currentTarget.dataset.viewmode, 10);
             customShaderMaterial.uniforms.uViewMode.value = mode;
-            document.querySelectorAll('.seg-btn').forEach(b =>
-                b.classList.toggle('seg-active', parseInt(b.dataset.viewmode, 10) === mode));
+            document.querySelectorAll('.seg-btn').forEach(b => {
+                const active = parseInt(b.dataset.viewmode, 10) === mode;
+                b.classList.toggle('seg-active', active);
+                b.setAttribute('aria-pressed', String(active));
+            });
+
+            const contourSlider = document.getElementById('contour-slider');
+            contourSlider.disabled = mode !== 0;
+            contourSlider.title = mode === 0 ? '' : 'Contours only apply to the Depth view';
+
             if (mode === 1) updateStatus('Angle view: green = facing the head, red = beyond the θ limit.', false);
             else if (mode === 2) updateStatus('Stretch view: artwork elongation 1/cos θ, green 1.0x to red ≥2.0x.', false);
+            else updateStatus('Depth view: color zones and contour lines show print depth.', false);
         }
 
         function onContourChange(e) {
@@ -758,6 +785,7 @@
             drawHelpers(refPoint, refNormal);
             helperGroup.visible = !printPreviewOn;
             showResults(computeDepthStats(refPoint, refNormal));
+            updateActionAvailability();
             updateStatus(`Analysis complete. Center: [${refPoint.x.toFixed(1)}, ${refPoint.y.toFixed(1)}, ${refPoint.z.toFixed(1)}]`, false);
         }
 
@@ -769,12 +797,48 @@
                 b.className = 'point-chip' + (i === activePointIdx ? ' point-active' : '');
                 b.textContent = String.fromCharCode(65 + i);
                 b.title = `[${sp.point.x.toFixed(1)}, ${sp.point.y.toFixed(1)}, ${sp.point.z.toFixed(1)}]`;
+                b.setAttribute('aria-pressed', String(i === activePointIdx));
                 b.addEventListener('click', () => {
                     activePointIdx = i;
                     applyAnalysis(sp.point, sp.normal, false);
                 });
                 row.appendChild(b);
             });
+        }
+
+        // ================= Action availability =================
+        // Keeps buttons that need a loaded model / an active analysis point /
+        // uploaded artwork visibly disabled instead of silently no-op'ing.
+        function updateActionAvailability() {
+            const hasModel = !!currentModel;
+            const hasArt = customShaderMaterial.uniforms.uUseArt.value === 1;
+
+            document.getElementById('remove-model-btn').disabled = !hasModel;
+            document.getElementById('auto-spot-btn').disabled = !hasModel;
+            document.getElementById('snapshot-btn').disabled = !hasModel;
+            document.getElementById('reset-fab').disabled = !hasModel;
+
+            const axisBtn = document.getElementById('axis-view-btn');
+            axisBtn.disabled = !analysisActive;
+            axisBtn.title = analysisActive ? 'View along the print axis' : 'Click a surface point first';
+
+            const dxfBtn = document.getElementById('dxf-btn');
+            dxfBtn.disabled = !analysisActive;
+            dxfBtn.title = analysisActive ? 'Export the safe-zone boundary as a DXF' : 'Click a surface point first';
+
+            const printToggle = document.getElementById('print-toggle');
+            printToggle.disabled = !analysisActive;
+            printToggle.title = analysisActive ? 'Toggle the finished-print simulation' : 'Click a surface point first';
+
+            const clearBtn = document.getElementById('art-clear-btn');
+            clearBtn.disabled = !hasArt;
+
+            const sizeInput = document.getElementById('art-size');
+            const rotInput = document.getElementById('art-rot');
+            sizeInput.disabled = !hasArt;
+            rotInput.disabled = !hasArt;
+            sizeInput.title = hasArt ? '' : 'Upload artwork to enable';
+            rotInput.title = hasArt ? '' : 'Upload artwork to enable';
         }
 
         // ================= Stats =================
@@ -855,12 +919,19 @@
         }
 
         // ================= Auto best spot =================
+        let bestSpotBusy = false;
         function autoFindBestSpot() {
-            if (!currentModel) { updateStatus('Load a model first.', false); return; }
+            if (!currentModel || bestSpotBusy) return;
+            bestSpotBusy = true;
+            const btn = document.getElementById('auto-spot-btn');
+            btn.disabled = true;
+            btn.classList.add('busy');
+            btn.setAttribute('aria-busy', 'true');
             updateStatus('Searching for the best print pose...', true);
 
             // Defer so the spinner paints before the synchronous search
             setTimeout(() => {
+              try {
                 const dirs = fibonacciSphere(64);
                 const v = new THREE.Vector3(), n = new THREE.Vector3(), tmp = new THREE.Vector3();
                 const nm = new THREE.Matrix3();
@@ -910,6 +981,12 @@
                 } else {
                     updateStatus('No printable pose found with the current profile.', false);
                 }
+              } finally {
+                bestSpotBusy = false;
+                btn.classList.remove('busy');
+                btn.removeAttribute('aria-busy');
+                updateActionAvailability();
+              }
             }, 30);
         }
 
@@ -969,10 +1046,13 @@
                 customShaderMaterial.uniforms.uUseArt.value = 1;
                 onArtParamChange();
                 document.getElementById('art-label').textContent = file.name.length > 18 ? file.name.slice(0, 16) + '…' : file.name;
-                updateStatus(`Artwork "${file.name}" loaded. Enable print preview to see it on the surface.`, false);
+                updateActionAvailability();
+                updateStatus(analysisActive
+                    ? `Artwork "${file.name}" loaded. Enable print preview to see it on the surface.`
+                    : `Artwork "${file.name}" loaded. Click a surface point, then enable print preview.`, false);
                 URL.revokeObjectURL(url);
             };
-            img.onerror = () => { updateStatus('Could not read that image.', false); URL.revokeObjectURL(url); };
+            img.onerror = () => { updateStatus('Could not read that image — try a PNG or JPG.', false); URL.revokeObjectURL(url); };
             img.src = url;
             event.target.value = '';
         }
@@ -980,6 +1060,7 @@
         function clearArtwork() {
             customShaderMaterial.uniforms.uUseArt.value = 0;
             document.getElementById('art-label').textContent = 'Artwork (PNG/JPG)';
+            updateActionAvailability();
             updateStatus('Back to the demo flower artwork.', false);
         }
 
@@ -1041,8 +1122,16 @@
                 (kappa !== null ? ' · κ ' + kappa.toFixed(3) : '');
             depthChipDot.style.background = overCurv ? '#800080' : (overAng ? '#00808c' : zoneColor(depth));
             depthChip.style.display = 'flex';
-            depthChip.style.left = (event.clientX + 14) + 'px';
-            depthChip.style.top = (event.clientY - 32) + 'px';
+
+            // Clamp to the viewport so the chip never renders off-screen near edges.
+            const pad = 8;
+            const rect = depthChip.getBoundingClientRect();
+            let left = event.clientX + 14;
+            let top = event.clientY - 32;
+            left = Math.max(pad, Math.min(left, window.innerWidth - rect.width - pad));
+            top = Math.max(pad, Math.min(top, window.innerHeight - rect.height - pad));
+            depthChip.style.left = left + 'px';
+            depthChip.style.top = top + 'px';
         }
 
         function hideDepthChip() { depthChip.style.display = 'none'; }
@@ -1330,6 +1419,7 @@
             hideDepthChip();
             clearHelpers();
             document.getElementById('results-panel').classList.remove('active');
+            updateActionAvailability();
         }
 
         function resetView() {
@@ -1407,18 +1497,29 @@
         }
 
         // ================= Status / loop =================
+        function dismissStatus() {
+            const bar = document.getElementById('status-bar');
+            if (bar.dataset.loading === 'true') return; // don't hide progress messages
+            if (window.statusTimeout) clearTimeout(window.statusTimeout);
+            bar.classList.remove('snackbar-visible');
+            bar.classList.add('snackbar-hidden');
+        }
+
         function updateStatus(msg, isLoading = false) {
             const bar = document.getElementById('status-bar');
             document.getElementById('loader-icon').style.display = isLoading ? 'inline-block' : 'none';
             document.getElementById('status-text').textContent = msg;
+            bar.dataset.loading = String(isLoading);
             bar.classList.remove('snackbar-hidden');
             bar.classList.add('snackbar-visible');
             if (window.statusTimeout) clearTimeout(window.statusTimeout);
             if (!isLoading) {
+                // Longer messages get more time to read, within sane bounds.
+                const duration = Math.min(9000, Math.max(3500, msg.length * 65));
                 window.statusTimeout = setTimeout(() => {
                     bar.classList.remove('snackbar-visible');
                     bar.classList.add('snackbar-hidden');
-                }, 5000);
+                }, duration);
             }
         }
 

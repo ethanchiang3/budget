@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Print Depth Analyzer - Direct-to-Shape</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Import map: three's examples/jsm modules import from the bare
+         specifier 'three', which browsers cannot resolve without this. -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <!-- Bootstrap: error surfacing + watchdog, outside the module -->
+    <script>
+        window.__appReady = false;
+        window.__setStatus = function (msg, hideLoader) {
+            var t = document.getElementById('status-text');
+            var l = document.getElementById('loader-icon');
+            if (t) t.textContent = msg;
+            if (l && hideLoader) l.style.display = 'none';
+        };
+        window.addEventListener('error', function (e) {
+            if (!window.__appReady) window.__setStatus('Load failed: ' + (e.message || 'external resource blocked'), true);
+            console.error(e);
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+            if (!window.__appReady) window.__setStatus('Load rejected: ' + (e.reason || 'network issue'), true);
+            console.error(e);
+        });
+        setTimeout(function () {
+            if (!window.__appReady) window.__setStatus('3D engine load timed out. Check that cdn.jsdelivr.net is reachable, or download this file and open it directly in a browser.', true);
+        }, 10000);
+    </script>
+
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #202124; color: #e8eaed; font-family: 'Roboto', sans-serif; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 1.5rem; }
+        .interactive { pointer-events: auto; }
+
+        .material-symbols-rounded { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+        .shadow-elevation-2 { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.25), 0 2px 4px -1px rgba(0,0,0,0.15); }
+        .shadow-elevation-3 { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.35), 0 4px 6px -2px rgba(0,0,0,0.2); }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #5f6368; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #80868b; }
+
+        .loader { border: 3px solid rgba(26, 115, 232, 0.2); border-top: 3px solid #1a73e8; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        #status-bar { transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1), opacity 0.3s ease; }
+        .snackbar-hidden { transform: translateY(150%); opacity: 0; }
+        .snackbar-visible { transform: translateY(0); opacity: 1; }
+
+        #depth-chip {
+            position: fixed; z-index: 20; pointer-events: none;
+            background: #2d2e31; border: 1px solid #5f6368; color: #e8eaed;
+            border-radius: 9999px; padding: 4px 12px 4px 8px;
+            font-size: 12px; font-weight: 500; display: none; align-items: center;
+            gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.35); white-space: nowrap;
+        }
+        #depth-chip .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+        #results-panel { display: none; }
+        #results-panel.active { display: block; animation: fadeUp 0.25s cubic-bezier(0.2, 0, 0, 1); }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+        input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px; background: #5f6368; outline: none; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #8ab4f8; cursor: pointer; border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #8ab4f8; cursor: pointer; border: none; }
+        input[type="range"]:focus-visible { outline: 2px solid #8ab4f8; outline-offset: 4px; }
+
+        input[type="number"], select {
+            background: #202124; border: 1px solid #5f6368; border-radius: 8px;
+            color: #e8eaed; font-size: 12px; padding: 4px 6px; width: 100%;
+        }
+        input[type="number"]:focus, select:focus { outline: 1px solid #8ab4f8; border-color: #8ab4f8; }
+        input[type=number]::-webkit-inner-spin-button { opacity: 0.4; }
+
+        .seg-btn { flex: 1; font-size: 11px; font-weight: 500; padding: 5px 0; border: 1px solid #5f6368; color: #9aa0a6; background: transparent; transition: all .15s; }
+        .seg-btn:first-child { border-radius: 9999px 0 0 9999px; }
+        .seg-btn:last-child { border-radius: 0 9999px 9999px 0; border-left: none; }
+        .seg-btn:nth-child(2) { border-left: none; }
+        .seg-btn.seg-active { background: rgba(138,180,248,0.15); color: #8ab4f8; border-color: #8ab4f8; }
+
+        .stripe-swatch { background: repeating-linear-gradient(45deg, #800080 0 3px, #b04ab0 3px 6px); }
+
+        .point-chip { font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 9999px; border: 1px solid #5f6368; color: #bdc1c6; background: transparent; cursor: pointer; transition: all .15s; }
+        .point-chip:hover { border-color: #8ab4f8; color: #8ab4f8; }
+        .point-chip.point-active { background: rgba(138,180,248,0.15); border-color: #8ab4f8; color: #8ab4f8; }
+
+        .section-title { font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: #9aa0a6; }
+        .icon-btn { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 8px 4px; border-radius: 9999px; border: 1px solid #5f6368; color: #e8eaed; background: transparent; transition: background .15s; }
+        .icon-btn:hover { background: rgba(255,255,255,0.05); }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+    <div id="depth-chip"><span class="dot" id="depth-chip-dot"></span><span id="depth-chip-text"></span></div>
+
+    <div id="ui-layer">
+        <div class="flex justify-between items-start gap-4 flex-wrap min-h-0" style="max-height: calc(100vh - 7rem);">
+
+            <!-- Left Controls -->
+            <div class="bg-[#2d2e31]/95 backdrop-blur shadow-elevation-3 p-5 rounded-3xl w-full max-w-sm interactive border border-[#3c4043] overflow-y-auto" style="max-height: calc(100vh - 7rem);">
+                <div class="flex items-center gap-3 mb-1.5">
+                    <div class="w-9 h-9 rounded-full bg-[#8ab4f8]/10 flex items-center justify-center text-[#8ab4f8] shrink-0">
+                        <span class="material-symbols-rounded text-xl">3d_rotation</span>
+                    </div>
+                    <h1 class="text-lg font-medium text-gray-100 tracking-tight">Print Depth Analyzer</h1>
+                </div>
+                <p class="text-xs text-gray-400 mb-4 leading-relaxed">
+                    Click the highest point of the surface to analyze depth falloff, incidence angle, and curvature against the active machine profile.
+                </p>
+
+                <!-- MODEL -->
+                <div class="section-title mb-2">Model</div>
+                <div class="flex gap-2 mb-2">
+                    <label class="cursor-pointer bg-[#8ab4f8] hover:bg-[#aecbfa] transition-colors text-[#202124] font-medium py-2.5 px-4 rounded-full text-center text-sm shadow-elevation-2 flex items-center justify-center gap-1.5 flex-1">
+                        <span class="material-symbols-rounded text-[18px]">upload_file</span>
+                        <span>Upload</span>
+                        <input type="file" id="file-input" accept=".obj,.stl,.3dm,.glb,.gltf" class="hidden" />
+                    </label>
+                    <select id="units-select" class="!w-24 shrink-0" title="Units of the uploaded file">
+                        <option value="1" selected>mm</option>
+                        <option value="10">cm</option>
+                        <option value="1000">m</option>
+                        <option value="25.4">inch</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-2 mb-4">
+                    <button id="remove-model-btn" class="icon-btn !text-[#f28b82] hover:!bg-[#f28b82]/10">
+                        <span class="material-symbols-rounded text-[16px]">delete</span>Remove
+                    </button>
+                    <button id="default-model-btn" class="icon-btn">
+                        <span class="material-symbols-rounded text-[16px]">deployed_code</span>Default
+                    </button>
+                </div>
+
+                <!-- MACHINE PROFILE -->
+                <div class="section-title mb-2">Machine Profile</div>
+                <select id="profile-select" class="mb-2">
+                    <option value="standard" selected>Standard DOD (throw ≤ 5mm)</option>
+                    <option value="highthrow">High-Throw Head (throw ≤ 10mm)</option>
+                    <option value="custom">Custom</option>
+                </select>
+                <div class="grid grid-cols-3 gap-2 mb-1">
+                    <div><div class="text-[10px] text-gray-500 mb-0.5">Optimal ≤ mm</div><input type="number" id="cfg-z1" step="0.5" min="0.1"></div>
+                    <div><div class="text-[10px] text-gray-500 mb-0.5">Safe ≤ mm</div><input type="number" id="cfg-z2" step="0.5" min="0.1"></div>
+                    <div><div class="text-[10px] text-gray-500 mb-0.5">Marginal ≤ mm</div><input type="number" id="cfg-z3" step="0.5" min="0.1"></div>
+                </div>
+                <div class="grid grid-cols-3 gap-2 mb-4">
+                    <div><div class="text-[10px] text-gray-500 mb-0.5">Limit ≤ mm</div><input type="number" id="cfg-z4" step="0.5" min="0.1"></div>
+                    <div><div class="text-[10px] text-gray-500 mb-0.5">Max κ mm⁻¹</div><input type="number" id="cfg-kappa" step="0.005" min="0.005"></div>
+                    <div><div class="text-[10px] text-gray-500 mb-0.5">Max θ deg</div><input type="number" id="cfg-angle" step="5" min="5" max="85"></div>
+                </div>
+
+                <!-- ANALYSIS -->
+                <div class="section-title mb-2">Analysis</div>
+                <div class="flex mb-2" role="group" aria-label="View mode">
+                    <button class="seg-btn seg-active" data-viewmode="0">Depth</button>
+                    <button class="seg-btn" data-viewmode="1">Angle</button>
+                    <button class="seg-btn" data-viewmode="2">Stretch</button>
+                </div>
+                <div class="flex justify-between items-center mb-1.5 mt-3">
+                    <label for="contour-slider" class="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Contour Interval</label>
+                    <span id="contour-value" class="text-[11px] font-medium text-[#8ab4f8] bg-[#8ab4f8]/10 px-2 py-0.5 rounded-full">1.0 mm</span>
+                </div>
+                <input type="range" id="contour-slider" min="0.25" max="2" step="0.25" value="1" class="mb-3" />
+                <div class="grid grid-cols-2 gap-2 mb-4">
+                    <button id="auto-spot-btn" class="icon-btn">
+                        <span class="material-symbols-rounded text-[16px]">travel_explore</span>Best Spot
+                    </button>
+                    <button id="axis-view-btn" class="icon-btn">
+                        <span class="material-symbols-rounded text-[16px]">center_focus_strong</span>Print View
+                    </button>
+                </div>
+
+                <!-- PRINT PREVIEW -->
+                <div class="flex items-center justify-between mb-2">
+                    <div>
+                        <div class="section-title">Print Preview</div>
+                        <div class="text-[10px] text-gray-500 mt-0.5">Ink fades with depth &amp; slope</div>
+                    </div>
+                    <button id="print-toggle" role="switch" aria-checked="false"
+                        class="relative w-[46px] h-7 rounded-full transition-colors shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#8ab4f8]" style="background:#5f6368">
+                        <span id="print-toggle-thumb" class="absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow transition-transform" style="transform: translateX(0)"></span>
+                    </button>
+                </div>
+                <div class="flex gap-2 mb-2">
+                    <label class="icon-btn flex-1 cursor-pointer">
+                        <span class="material-symbols-rounded text-[16px]">image</span>
+                        <span id="art-label">Artwork (PNG/JPG)</span>
+                        <input type="file" id="art-input" accept="image/*" class="hidden" />
+                    </label>
+                    <button id="art-clear-btn" class="icon-btn !w-9 shrink-0 !px-0" title="Back to demo flowers">
+                        <span class="material-symbols-rounded text-[16px]">close</span>
+                    </button>
+                </div>
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div>
+                        <div class="flex justify-between text-[10px] text-gray-500 mb-1"><span>Width</span><span id="art-size-val">40 mm</span></div>
+                        <input type="range" id="art-size" min="10" max="120" step="2" value="40">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-[10px] text-gray-500 mb-1"><span>Rotation</span><span id="art-rot-val">0°</span></div>
+                        <input type="range" id="art-rot" min="0" max="360" step="5" value="0">
+                    </div>
+                </div>
+
+                <!-- EXPORT -->
+                <div class="section-title mb-2">Export</div>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="snapshot-btn" class="icon-btn">
+                        <span class="material-symbols-rounded text-[16px]">photo_camera</span>Snapshot
+                    </button>
+                    <button id="dxf-btn" class="icon-btn">
+                        <span class="material-symbols-rounded text-[16px]">polyline</span>Boundary DXF
+                    </button>
+                </div>
+
+                <!-- RESULTS -->
+                <div id="results-panel" class="mt-4 pt-4 border-t border-[#3c4043]">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="section-title">Analysis Results</h3>
+                        <span id="mesh-info" class="text-[10px] text-gray-500"></span>
+                    </div>
+                    <div id="points-row" class="flex flex-wrap gap-1.5 mb-3"></div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="bg-white/5 rounded-2xl p-2.5">
+                            <div class="text-[10px] text-gray-400 mb-0.5">Max Depth (Visible)</div>
+                            <div class="text-base font-medium text-gray-100"><span id="stat-max">--</span> <span class="text-[10px] font-normal text-gray-500">mm</span></div>
+                        </div>
+                        <div class="bg-white/5 rounded-2xl p-2.5">
+                            <div class="text-[10px] text-gray-400 mb-0.5">Beyond Safe Zone</div>
+                            <div class="text-base font-medium text-gray-100"><span id="stat-over">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
+                        </div>
+                        <div class="bg-white/5 rounded-2xl p-2.5">
+                            <div class="text-[10px] text-gray-400 mb-0.5">Over-Curvature (κ)</div>
+                            <div class="text-base font-medium text-gray-100"><span id="stat-curv">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
+                        </div>
+                        <div class="bg-white/5 rounded-2xl p-2.5">
+                            <div class="text-[10px] text-gray-400 mb-0.5">Steep Angle (θ)</div>
+                            <div class="text-base font-medium text-gray-100"><span id="stat-angle">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
+                        </div>
+                        <div class="bg-white/5 rounded-2xl p-2.5 col-span-2">
+                            <div class="text-[10px] text-gray-400 mb-0.5">Non-Developable (|K|)</div>
+                            <div class="text-base font-medium text-gray-100"><span id="stat-gauss">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
+                        </div>
+                    </div>
+                    <div id="stat-verdict" class="mt-3 text-xs font-medium flex items-start gap-1.5"></div>
+                </div>
+            </div>
+
+            <!-- Right Legend -->
+            <div class="bg-[#2d2e31]/95 backdrop-blur shadow-elevation-3 p-5 rounded-3xl interactive border border-[#3c4043]">
+                <h2 class="text-sm font-medium text-gray-300 mb-4 tracking-wide flex items-center gap-2 uppercase">
+                    <span class="material-symbols-rounded text-gray-500 text-lg">format_list_bulleted</span>
+                    Depth Legend
+                </h2>
+                <div class="flex flex-col gap-2.5 text-sm text-gray-300">
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full bg-[#009919] shrink-0"></div>
+                        <span id="lg-z1">0 - 1.5 mm <span class="text-xs text-gray-500 ml-1">(Optimal)</span></span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full bg-[#00e636] shrink-0"></div>
+                        <span id="lg-z2">1.5 - 3.0 mm <span class="text-xs text-gray-500 ml-1">(Safe)</span></span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full bg-[#e6cc00] shrink-0"></div>
+                        <span id="lg-z3">3.0 - 4.0 mm <span class="text-xs text-gray-500 ml-1">(Marginal)</span></span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full bg-[#e67300] shrink-0"></div>
+                        <span id="lg-z4">4.0 - 5.0 mm <span class="text-xs text-gray-500 ml-1">(Overspray Risk)</span></span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full bg-[#cc0000] shrink-0"></div>
+                        <span id="lg-z5">&gt; 5.0 mm <span class="text-xs text-gray-500 ml-1">(Unprintable)</span></span>
+                    </div>
+                    <div class="h-px bg-[#3c4043] my-1"></div>
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full bg-[#800080] shrink-0"></div>
+                        <span id="lg-kappa">κ &ge; 0.086 mm⁻¹ <span class="text-xs text-gray-500 ml-1">(Tight radius)</span></span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full bg-[#00808c] shrink-0"></div>
+                        <span id="lg-angle">θ &gt; 45° <span class="text-xs text-gray-500 ml-1">(Steep slope)</span></span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full stripe-swatch shrink-0"></div>
+                        <span>|K| high <span class="text-xs text-gray-500 ml-1">(Non-developable)</span></span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full bg-[#4d4d4d] shrink-0"></div>
+                        <span class="text-gray-500">Backface (Hidden)</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-1 bg-[#0f0f14] border border-gray-500 shrink-0"></div>
+                        <span class="text-gray-500 text-xs" id="legend-contour">Contour interval: 1.0 mm</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Snackbar + FAB -->
+        <div class="relative flex justify-center items-end pb-4">
+            <button id="reset-fab" title="Reset view & analysis point" aria-label="Reset view & analysis point"
+                class="interactive absolute right-2 bottom-4 w-14 h-14 rounded-2xl bg-[#2d2e31] hover:bg-[#3c4043] active:scale-95 transition-all shadow-elevation-3 border border-[#3c4043] flex items-center justify-center text-[#8ab4f8]">
+                <span class="material-symbols-rounded text-2xl">restart_alt</span>
+            </button>
+            <div id="status-bar" class="bg-[#e8eaed] text-[#202124] text-sm px-5 py-3 rounded-xl shadow-elevation-3 interactive snackbar-visible flex items-center min-w-[300px]">
+                <span class="loader" id="loader-icon"></span>
+                <span id="status-text" class="ml-2">Initializing...</span>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+        import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+        import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+
+        window.addEventListener('error', function(e) {
+            if (window.__appReady) updateStatus("System error: " + e.message, false);
+        });
+
+        // ================= Machine profiles =================
+        // Grounded in DTS literature: DOD drops hold accuracy for ~3-4mm of
+        // flight; >5mm jetting distance is the accepted quality failure point.
+        const PROFILES = {
+            standard:  { z: [1.5, 3.0, 4.0, 5.0],  kappa: 0.086, angle: 45 },
+            highthrow: { z: [3.0, 6.0, 8.0, 10.0], kappa: 0.086, angle: 50 }
+        };
+        const DOT_ERR_UM_PER_MM = 20; // est. landing error growth with throw distance
+
+        let cfg = { z: [...PROFILES.standard.z], kappa: PROFILES.standard.kappa, angle: PROFILES.standard.angle };
+
+        let scene, camera, renderer, controls;
+        let currentModel = null;
+        let customShaderMaterial = null;
+        let helperGroup = new THREE.Group();
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+        let analysisActive = false;
+        let refPoint = new THREE.Vector3();
+        let refNormal = new THREE.Vector3(0, 1, 0);
+        let modelScale = 60;
+        let meshAvgEdge = 0;
+        let savedPoints = [];   // { point, normal }
+        let activePointIdx = -1;
+
+        // ================= Shaders =================
+        const vertexShader = `
+            attribute float curvature;
+            attribute float kgauss;
+            varying vec3 vWorldPosition;
+            varying vec3 vWorldNormal;
+            varying float vCurvature;
+            varying float vGauss;
+            void main() {
+                vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                vWorldPosition = worldPosition.xyz;
+                vWorldNormal = normalize(mat3(modelMatrix) * normal);
+                vCurvature = curvature;
+                vGauss = kgauss;
+                gl_Position = projectionMatrix * viewMatrix * worldPosition;
+            }
+        `;
+
+        const fragmentShader = `
+            uniform vec3 uRefPoint;
+            uniform vec3 uRefNormal;
+            uniform vec3 uTangent;
+            uniform vec3 uBitangent;
+            uniform int uIsActive;
+            uniform int uShowPrint;
+            uniform int uViewMode;      // 0 depth zones, 1 incidence angle, 2 stretch
+            uniform int uUseArt;
+            uniform float uContourInterval;
+            uniform float uMaxCurvature;
+            uniform float uMaxGauss;
+            uniform float uMaxAngleCos;
+            uniform vec4 uZ;            // optimal / safe / marginal / limit
+            uniform sampler2D uArtTex;
+            uniform vec2 uArtSize;      // artwork w,h in mm
+            uniform float uArtRot;
+
+            varying vec3 vWorldPosition;
+            varying vec3 vWorldNormal;
+            varying float vCurvature;
+            varying float vGauss;
+
+            vec2 rot2(vec2 p, float a) {
+                float c = cos(a), s = sin(a);
+                return vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+            }
+
+            // Procedural flower artwork (fallback when no image uploaded)
+            void drawFlower(vec2 p, float radius, float petals, float rot, vec3 petalCol, float q, inout vec3 col) {
+                float r = length(p);
+                float fw = fwidth(r) * 1.5 + 0.001;
+                float a = atan(p.y, p.x) + rot;
+                float petalEdge = radius * (0.62 + 0.38 * cos(a * petals));
+                float pet = 1.0 - smoothstep(petalEdge - fw, petalEdge + fw, r);
+                col = mix(col, petalCol, pet * 0.92 * q);
+                float core = 1.0 - smoothstep(radius * 0.28 - fw, radius * 0.28 + fw, r);
+                col = mix(col, vec3(0.98, 0.79, 0.25), core * q);
+            }
+
+            vec3 ramp(float t) { // green -> yellow -> red
+                return t < 0.5 ? mix(vec3(0.0,0.65,0.15), vec3(0.9,0.8,0.0), t*2.0)
+                               : mix(vec3(0.9,0.8,0.0), vec3(0.85,0.05,0.05), t*2.0-1.0);
+            }
+
+            void main() {
+                vec3 N = normalize(vWorldNormal);
+                vec3 V = normalize(cameraPosition - vWorldPosition);
+                vec3 shadeN = (dot(N, V) < 0.0) ? -N : N;
+
+                vec3 lightDir = normalize(vec3(0.5, 1.0, 0.8));
+                float lightIntensity = 0.55 + max(dot(shadeN, lightDir), 0.0) * 0.45;
+
+                if (uIsActive == 0) {
+                    gl_FragColor = vec4(vec3(0.9) * lightIntensity, 1.0);
+                    return;
+                }
+
+                float depth = dot(uRefPoint - vWorldPosition, uRefNormal);
+                float facing = dot(N, uRefNormal); // cos(theta) vs. print axis
+                bool back = facing < -0.1;
+                bool overK = vCurvature >= uMaxCurvature;
+                bool overG = abs(vGauss) >= uMaxGauss;
+                bool overA = !back && facing < uMaxAngleCos;
+
+                // ---- Print preview: simulate finished product ----
+                if (uShowPrint == 1) {
+                    vec3 col = back ? vec3(0.35) : vec3(0.94);
+
+                    if (!back && !overK && depth >= 0.0 && depth <= uZ.z) {
+                        // Continuous quality falloff: sharp in optimal zone,
+                        // fading through safe and marginal, gone past marginal.
+                        float q = 1.0
+                            - smoothstep(uZ.x, uZ.y, depth) * 0.25
+                            - smoothstep(uZ.y, uZ.z, depth) * 0.55;
+                        // Incidence-angle penalty: ink degrades on steep slopes
+                        q *= smoothstep(uMaxAngleCos - 0.10, uMaxAngleCos + 0.10, facing);
+                        if (overG) q *= 0.6; // double curvature distorts laydown
+
+                        if (q > 0.002) {
+                            vec3 rel = vWorldPosition - uRefPoint;
+                            vec2 uv = vec2(dot(rel, uTangent), dot(rel, uBitangent));
+                            if (uUseArt == 1) {
+                                vec2 auv = rot2(uv, -uArtRot) / uArtSize + 0.5;
+                                if (auv.x >= 0.0 && auv.x <= 1.0 && auv.y >= 0.0 && auv.y <= 1.0) {
+                                    vec4 tex = texture2D(uArtTex, auv);
+                                    col = mix(col, tex.rgb, tex.a * q);
+                                }
+                            } else {
+                                drawFlower(uv - vec2( 0.0,  3.5), 7.5, 5.0, 0.0, vec3(0.91, 0.36, 0.47), q, col);
+                                drawFlower(uv - vec2(-9.5, -4.5), 5.5, 6.0, 0.5, vec3(0.95, 0.56, 0.19), q, col);
+                                drawFlower(uv - vec2( 9.0, -5.5), 4.8, 8.0, 1.0, vec3(0.42, 0.48, 0.89), q, col);
+                            }
+                        }
+                    }
+
+                    // Safe-zone boundary iso-line
+                    if (!back && !overK) {
+                        float fw3 = fwidth(depth) * 1.2 + 0.0005;
+                        float bLine = 1.0 - smoothstep(fw3, fw3 * 2.5, abs(depth - uZ.y));
+                        col = mix(col, vec3(0.54, 0.71, 0.97), bLine * 0.65);
+                    }
+
+                    gl_FragColor = vec4(col * lightIntensity, 1.0);
+                    return;
+                }
+
+                // ---- Analysis views ----
+                vec3 baseColor;
+
+                if (uViewMode == 1) {
+                    // Incidence angle map
+                    if (back) baseColor = vec3(0.3);
+                    else {
+                        float maxTh = acos(clamp(uMaxAngleCos, 0.0, 1.0));
+                        float th = acos(clamp(facing, 0.0, 1.0));
+                        baseColor = th <= maxTh ? ramp(th / maxTh * 0.5) : ramp(min(0.5 + (th - maxTh) / maxTh, 1.0));
+                    }
+                } else if (uViewMode == 2) {
+                    // Artwork stretch map: 1/cos(theta), 1.0x..2.0x mapped green..red
+                    if (back) baseColor = vec3(0.3);
+                    else {
+                        float stretch = 1.0 / max(facing, 0.02);
+                        baseColor = ramp(clamp(stretch - 1.0, 0.0, 1.0));
+                    }
+                } else {
+                    // Depth zones
+                    if (back)       baseColor = vec3(0.3, 0.3, 0.3);
+                    else if (overK) baseColor = vec3(0.5, 0.0, 0.5);
+                    else if (overA) baseColor = vec3(0.0, 0.5, 0.55);
+                    else if (depth < 0.0)      baseColor = vec3(0.55, 0.55, 0.6);
+                    else if (depth <= uZ.x) baseColor = vec3(0.0, 0.6, 0.1);
+                    else if (depth <= uZ.y) baseColor = vec3(0.0, 0.9, 0.2);
+                    else if (depth <= uZ.z) baseColor = vec3(0.9, 0.8, 0.0);
+                    else if (depth <= uZ.w) baseColor = vec3(0.9, 0.45, 0.0);
+                    else                    baseColor = vec3(0.8, 0.0, 0.0);
+                }
+
+                vec3 finalColor = baseColor;
+
+                // Non-developable overlay: screen-space diagonal stripes
+                if (!back && overG && uViewMode == 0) {
+                    float st = fract((gl_FragCoord.x + gl_FragCoord.y) / 14.0);
+                    if (st < 0.4) finalColor = mix(finalColor, vec3(0.69, 0.29, 0.69), 0.75);
+                }
+
+                // Contours (depth view only)
+                if (uViewMode == 0 && !back && depth >= 0.0 && !overK && !overA) {
+                    float d = depth / uContourInterval;
+                    float distToLine = abs(fract(d + 0.5) - 0.5);
+                    float fw = fwidth(d);
+                    float line = 1.0 - smoothstep(fw * 0.6, fw * 1.6, distToLine);
+                    finalColor = mix(finalColor, vec3(0.1, 0.1, 0.14), line * 0.85);
+                }
+
+                gl_FragColor = vec4(finalColor * lightIntensity, 1.0);
+            }
+        `;
+
+        // ================= Init =================
+        function init() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x202124);
+            scene.add(helperGroup);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(100, 100, 100);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+            const dl = new THREE.DirectionalLight(0xffffff, 0.5);
+            dl.position.set(1, 1, 1);
+            scene.add(dl);
+
+            const dummyTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 0]), 1, 1);
+            dummyTex.needsUpdate = true;
+
+            customShaderMaterial = new THREE.ShaderMaterial({
+                vertexShader, fragmentShader,
+                uniforms: {
+                    uRefPoint:  { value: new THREE.Vector3() },
+                    uRefNormal: { value: new THREE.Vector3(0, 1, 0) },
+                    uTangent:   { value: new THREE.Vector3(1, 0, 0) },
+                    uBitangent: { value: new THREE.Vector3(0, 0, 1) },
+                    uIsActive:  { value: 0 },
+                    uShowPrint: { value: 0 },
+                    uViewMode:  { value: 0 },
+                    uUseArt:    { value: 0 },
+                    uContourInterval: { value: 1.0 },
+                    uMaxCurvature: { value: cfg.kappa },
+                    uMaxGauss:     { value: cfg.kappa * cfg.kappa },
+                    uMaxAngleCos:  { value: Math.cos(cfg.angle * Math.PI / 180) },
+                    uZ:        { value: new THREE.Vector4(...cfg.z) },
+                    uArtTex:   { value: dummyTex },
+                    uArtSize:  { value: new THREE.Vector2(40, 40) },
+                    uArtRot:   { value: 0 }
+                },
+                side: THREE.DoubleSide,
+                extensions: { derivatives: true }
+            });
+
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('pointerdown', onPointerDown);
+            renderer.domElement.addEventListener('pointermove', onPointerMove);
+            renderer.domElement.addEventListener('pointerleave', hideDepthChip);
+
+            document.getElementById('file-input').addEventListener('change', handleFileUpload);
+            document.getElementById('remove-model-btn').addEventListener('click', removeModel);
+            document.getElementById('default-model-btn').addEventListener('click', restoreDefaultModel);
+            document.getElementById('reset-fab').addEventListener('click', resetView);
+            document.getElementById('contour-slider').addEventListener('input', onContourChange);
+            document.getElementById('print-toggle').addEventListener('click', onPrintToggle);
+            document.getElementById('auto-spot-btn').addEventListener('click', autoFindBestSpot);
+            document.getElementById('axis-view-btn').addEventListener('click', lookAlongPrintAxis);
+            document.getElementById('snapshot-btn').addEventListener('click', exportSnapshot);
+            document.getElementById('dxf-btn').addEventListener('click', exportBoundaryDXF);
+            document.getElementById('profile-select').addEventListener('change', onProfileSelect);
+            document.getElementById('art-input').addEventListener('change', handleArtworkUpload);
+            document.getElementById('art-clear-btn').addEventListener('click', clearArtwork);
+            document.getElementById('art-size').addEventListener('input', onArtParamChange);
+            document.getElementById('art-rot').addEventListener('input', onArtParamChange);
+            document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', onViewModeClick));
+            ['cfg-z1','cfg-z2','cfg-z3','cfg-z4','cfg-kappa','cfg-angle'].forEach(id => {
+                document.getElementById(id).addEventListener('change', onCfgInputChange);
+            });
+
+            fillCfgInputs();
+            applyCfg();
+            loadDefaultModel();
+            animate();
+            window.__appReady = true;
+        }
+
+        // ================= Machine profile =================
+        function fillCfgInputs() {
+            document.getElementById('cfg-z1').value = cfg.z[0];
+            document.getElementById('cfg-z2').value = cfg.z[1];
+            document.getElementById('cfg-z3').value = cfg.z[2];
+            document.getElementById('cfg-z4').value = cfg.z[3];
+            document.getElementById('cfg-kappa').value = cfg.kappa;
+            document.getElementById('cfg-angle').value = cfg.angle;
+        }
+
+        function onProfileSelect(e) {
+            const p = PROFILES[e.target.value];
+            if (p) {
+                cfg = { z: [...p.z], kappa: p.kappa, angle: p.angle };
+                fillCfgInputs();
+                applyCfg();
+            }
+        }
+
+        function onCfgInputChange() {
+            const v = id => parseFloat(document.getElementById(id).value);
+            let z = [v('cfg-z1'), v('cfg-z2'), v('cfg-z3'), v('cfg-z4')];
+            // Enforce monotonic zones
+            for (let i = 1; i < 4; i++) if (!(z[i] > z[i-1])) z[i] = z[i-1] + 0.5;
+            cfg.z = z;
+            cfg.kappa = Math.max(v('cfg-kappa') || 0.086, 0.001);
+            cfg.angle = Math.min(Math.max(v('cfg-angle') || 45, 5), 85);
+            fillCfgInputs();
+            document.getElementById('profile-select').value = 'custom';
+            applyCfg();
+        }
+
+        function applyCfg() {
+            const u = customShaderMaterial.uniforms;
+            u.uZ.value.set(cfg.z[0], cfg.z[1], cfg.z[2], cfg.z[3]);
+            u.uMaxCurvature.value = cfg.kappa;
+            u.uMaxGauss.value = cfg.kappa * cfg.kappa;
+            u.uMaxAngleCos.value = Math.cos(cfg.angle * Math.PI / 180);
+
+            const f = n => (Math.round(n * 100) / 100).toString();
+            const R = (1 / cfg.kappa).toFixed(1);
+            document.getElementById('lg-z1').innerHTML = `0 - ${f(cfg.z[0])} mm <span class="text-xs text-gray-500 ml-1">(Optimal)</span>`;
+            document.getElementById('lg-z2').innerHTML = `${f(cfg.z[0])} - ${f(cfg.z[1])} mm <span class="text-xs text-gray-500 ml-1">(Safe)</span>`;
+            document.getElementById('lg-z3').innerHTML = `${f(cfg.z[1])} - ${f(cfg.z[2])} mm <span class="text-xs text-gray-500 ml-1">(Marginal)</span>`;
+            document.getElementById('lg-z4').innerHTML = `${f(cfg.z[2])} - ${f(cfg.z[3])} mm <span class="text-xs text-gray-500 ml-1">(Overspray Risk)</span>`;
+            document.getElementById('lg-z5').innerHTML = `&gt; ${f(cfg.z[3])} mm <span class="text-xs text-gray-500 ml-1">(Unprintable)</span>`;
+            document.getElementById('lg-kappa').innerHTML = `κ &ge; ${cfg.kappa} mm⁻¹ <span class="text-xs text-gray-500 ml-1">(R &lt; ${R}mm)</span>`;
+            document.getElementById('lg-angle').innerHTML = `θ &gt; ${cfg.angle}° <span class="text-xs text-gray-500 ml-1">(Steep slope)</span>`;
+
+            if (analysisActive) showResults(computeDepthStats(refPoint, refNormal));
+        }
+
+        // ================= View modes =================
+        function onViewModeClick(e) {
+            const mode = parseInt(e.currentTarget.dataset.viewmode, 10);
+            customShaderMaterial.uniforms.uViewMode.value = mode;
+            document.querySelectorAll('.seg-btn').forEach(b =>
+                b.classList.toggle('seg-active', parseInt(b.dataset.viewmode, 10) === mode));
+            if (mode === 1) updateStatus('Angle view: green = facing the head, red = beyond the θ limit.', false);
+            else if (mode === 2) updateStatus('Stretch view: artwork elongation 1/cos θ, green 1.0x to red ≥2.0x.', false);
+        }
+
+        function onContourChange(e) {
+            const val = parseFloat(e.target.value);
+            customShaderMaterial.uniforms.uContourInterval.value = val;
+            const label = val.toFixed(2).replace(/\.?0+$/, '') + ' mm';
+            document.getElementById('contour-value').textContent = label;
+            document.getElementById('legend-contour').textContent = 'Contour interval: ' + label;
+        }
+
+        // ================= Pointer / analysis =================
+        let pointerDownTime = 0;
+        let pointerDownPos = new THREE.Vector2();
+
+        function onPointerDown(event) {
+            pointerDownTime = Date.now();
+            pointerDownPos.set(event.clientX, event.clientY);
+            window.addEventListener('pointerup', onPointerUp, { once: true });
+        }
+        function onPointerUp(event) {
+            const dt = Date.now() - pointerDownTime;
+            const dist = pointerDownPos.distanceTo(new THREE.Vector2(event.clientX, event.clientY));
+            if (dt < 300 && dist < 5) {
+                const hit = raycastModel(event.clientX, event.clientY);
+                if (hit) applyAnalysis(hit.point.clone(), worldNormalFromHit(hit), true);
+            }
+        }
+
+        function raycastModel(clientX, clientY) {
+            if (!currentModel) return null;
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const hits = raycaster.intersectObject(currentModel, true);
+            return hits.length > 0 ? hits[0] : null;
+        }
+
+        function worldNormalFromHit(hit) {
+            const n = hit.face.normal.clone();
+            const nm = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
+            return n.applyMatrix3(nm).normalize();
+        }
+
+        function applyAnalysis(point, normal, save) {
+            refPoint.copy(point);
+            refNormal.copy(normal);
+
+            const up = Math.abs(refNormal.y) < 0.99 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+            const tangent = new THREE.Vector3().crossVectors(up, refNormal).normalize();
+            const bitangent = new THREE.Vector3().crossVectors(refNormal, tangent);
+
+            const u = customShaderMaterial.uniforms;
+            u.uRefPoint.value.copy(refPoint);
+            u.uRefNormal.value.copy(refNormal);
+            u.uTangent.value.copy(tangent);
+            u.uBitangent.value.copy(bitangent);
+            u.uIsActive.value = 1;
+            analysisActive = true;
+
+            if (save) {
+                savedPoints.push({ point: point.clone(), normal: normal.clone() });
+                if (savedPoints.length > 6) savedPoints.shift();
+                activePointIdx = savedPoints.length - 1;
+            }
+            renderPointChips();
+
+            drawHelpers(refPoint, refNormal);
+            helperGroup.visible = !printPreviewOn;
+            showResults(computeDepthStats(refPoint, refNormal));
+            updateStatus(`Analysis complete. Center: [${refPoint.x.toFixed(1)}, ${refPoint.y.toFixed(1)}, ${refPoint.z.toFixed(1)}]`, false);
+        }
+
+        function renderPointChips() {
+            const row = document.getElementById('points-row');
+            row.innerHTML = '';
+            savedPoints.forEach((sp, i) => {
+                const b = document.createElement('button');
+                b.className = 'point-chip' + (i === activePointIdx ? ' point-active' : '');
+                b.textContent = String.fromCharCode(65 + i);
+                b.title = `[${sp.point.x.toFixed(1)}, ${sp.point.y.toFixed(1)}, ${sp.point.z.toFixed(1)}]`;
+                b.addEventListener('click', () => {
+                    activePointIdx = i;
+                    applyAnalysis(sp.point, sp.normal, false);
+                });
+                row.appendChild(b);
+            });
+        }
+
+        // ================= Stats =================
+        function vertexPrintableFlags(d, cosT, kap, K) {
+            return {
+                front: cosT >= -0.1,
+                inSafe: d >= 0 && d <= cfg.z[1],
+                overLimit: d > cfg.z[1],
+                overK: kap >= cfg.kappa,
+                overA: cosT >= -0.1 && cosT < Math.cos(cfg.angle * Math.PI / 180),
+                overG: Math.abs(K) >= cfg.kappa * cfg.kappa
+            };
+        }
+
+        function computeDepthStats(point, normal) {
+            let maxDepth = 0, total = 0, over = 0, curvC = 0, angC = 0, gaussC = 0;
+            const v = new THREE.Vector3(), n = new THREE.Vector3(), tmp = new THREE.Vector3();
+            const nm = new THREE.Matrix3();
+            const cosMax = Math.cos(cfg.angle * Math.PI / 180);
+            const gMax = cfg.kappa * cfg.kappa;
+
+            currentModel.updateMatrixWorld(true);
+            currentModel.traverse((child) => {
+                if (!child.isMesh) return;
+                const pos = child.geometry.attributes.position;
+                const nor = child.geometry.attributes.normal;
+                const cur = child.geometry.attributes.curvature;
+                const kg  = child.geometry.attributes.kgauss;
+                if (!pos || !nor) return;
+                nm.getNormalMatrix(child.matrixWorld);
+
+                for (let i = 0; i < pos.count; i++) {
+                    n.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize();
+                    const cosT = n.dot(normal);
+                    if (cosT < -0.1) continue;
+                    v.fromBufferAttribute(pos, i).applyMatrix4(child.matrixWorld);
+                    const d = tmp.subVectors(point, v).dot(normal);
+                    if (d < 0) continue;
+                    total++;
+                    if (d > maxDepth) maxDepth = d;
+                    if (d > cfg.z[1]) over++;
+                    if (cur && cur.getX(i) >= cfg.kappa) curvC++;
+                    if (cosT < cosMax) angC++;
+                    if (kg && Math.abs(kg.getX(i)) >= gMax) gaussC++;
+                }
+            });
+
+            const pct = c => total > 0 ? (c / total) * 100 : 0;
+            return { maxDepth, overPercent: pct(over), curvPercent: pct(curvC), angPercent: pct(angC), gaussPercent: pct(gaussC) };
+        }
+
+        function showResults(s) {
+            document.getElementById('stat-max').textContent = s.maxDepth.toFixed(2);
+            document.getElementById('stat-over').textContent = s.overPercent.toFixed(1);
+            document.getElementById('stat-curv').textContent = s.curvPercent.toFixed(1);
+            document.getElementById('stat-angle').textContent = s.angPercent.toFixed(1);
+            document.getElementById('stat-gauss').textContent = s.gaussPercent.toFixed(1);
+
+            const mi = document.getElementById('mesh-info');
+            mi.textContent = `mesh edge ~${meshAvgEdge.toFixed(2)}mm`;
+            mi.style.color = meshAvgEdge > 1.5 ? '#fdd663' : '';
+            mi.title = meshAvgEdge > 1.5 ? 'Coarse mesh: curvature may be underestimated. Re-export with max edge length ≤ 1mm.' : '';
+
+            const verdict = document.getElementById('stat-verdict');
+            const issues = [];
+            if (s.maxDepth > cfg.z[3]) issues.push(`depth exceeds the ${cfg.z[3]}mm limit`);
+            if (s.curvPercent > 0) issues.push(`curvature exceeds ${cfg.kappa} mm⁻¹`);
+            if (s.angPercent > 0) issues.push(`slopes exceed θ ${cfg.angle}°`);
+            if (issues.length === 0) {
+                verdict.className = 'mt-3 text-xs font-medium flex items-start gap-1.5 text-[#81c995]';
+                verdict.innerHTML = '<span class="material-symbols-rounded text-base">check_circle</span><span>All criteria within printable limits at this pose</span>';
+            } else {
+                verdict.className = 'mt-3 text-xs font-medium flex items-start gap-1.5 text-[#f28b82]';
+                verdict.innerHTML = '<span class="material-symbols-rounded text-base">error</span><span>' +
+                    (issues.join('; ').charAt(0).toUpperCase() + issues.join('; ').slice(1)) + '</span>';
+            }
+            document.getElementById('results-panel').classList.add('active');
+        }
+
+        // ================= Auto best spot =================
+        function autoFindBestSpot() {
+            if (!currentModel) { updateStatus('Load a model first.', false); return; }
+            updateStatus('Searching for the best print pose...', true);
+
+            // Defer so the spinner paints before the synchronous search
+            setTimeout(() => {
+                const dirs = fibonacciSphere(64);
+                const v = new THREE.Vector3(), n = new THREE.Vector3(), tmp = new THREE.Vector3();
+                const nm = new THREE.Matrix3();
+                const cosMax = Math.cos(cfg.angle * Math.PI / 180);
+                let best = null;
+
+                currentModel.updateMatrixWorld(true);
+                const meshes = [];
+                currentModel.traverse(c => { if (c.isMesh) meshes.push(c); });
+
+                for (const dir of dirs) {
+                    // Reference point: the extreme vertex along this direction
+                    let maxDot = -Infinity;
+                    const extreme = new THREE.Vector3();
+                    for (const m of meshes) {
+                        const pos = m.geometry.attributes.position;
+                        for (let i = 0; i < pos.count; i++) {
+                            v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+                            const dd = v.dot(dir);
+                            if (dd > maxDot) { maxDot = dd; extreme.copy(v); }
+                        }
+                    }
+                    // Score: printable vertex count at this pose
+                    let score = 0;
+                    for (const m of meshes) {
+                        const pos = m.geometry.attributes.position;
+                        const nor = m.geometry.attributes.normal;
+                        const cur = m.geometry.attributes.curvature;
+                        nm.getNormalMatrix(m.matrixWorld);
+                        for (let i = 0; i < pos.count; i++) {
+                            n.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize();
+                            const cosT = n.dot(dir);
+                            if (cosT < cosMax) continue;
+                            v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+                            const d = tmp.subVectors(extreme, v).dot(dir);
+                            if (d < 0 || d > cfg.z[1]) continue;
+                            if (cur && cur.getX(i) >= cfg.kappa) continue;
+                            score++;
+                        }
+                    }
+                    if (!best || score > best.score) best = { score, dir: dir.clone(), point: extreme.clone() };
+                }
+
+                if (best && best.score > 0) {
+                    applyAnalysis(best.point, best.dir, true);
+                    updateStatus(`Best pose found: ${best.score} printable vertices in the safe zone.`, false);
+                } else {
+                    updateStatus('No printable pose found with the current profile.', false);
+                }
+            }, 30);
+        }
+
+        function fibonacciSphere(count) {
+            const dirs = [];
+            const golden = Math.PI * (3 - Math.sqrt(5));
+            for (let i = 0; i < count; i++) {
+                const y = 1 - (i / (count - 1)) * 2;
+                const r = Math.sqrt(1 - y * y);
+                const t = golden * i;
+                dirs.push(new THREE.Vector3(Math.cos(t) * r, y, Math.sin(t) * r));
+            }
+            return dirs;
+        }
+
+        function lookAlongPrintAxis() {
+            if (!analysisActive) { updateStatus('Click an analysis point first.', false); return; }
+            const dist = modelScale * 1.8;
+            camera.position.copy(refPoint).addScaledVector(refNormal, dist);
+            controls.target.copy(refPoint);
+            updateStatus('Viewing along the print axis (as the head sees it).', false);
+        }
+
+        // ================= Print preview & artwork =================
+        let printPreviewOn = false;
+        let artTexture = null;
+
+        function setPrintPreview(on) {
+            printPreviewOn = on;
+            customShaderMaterial.uniforms.uShowPrint.value = on ? 1 : 0;
+            helperGroup.visible = !on;
+            const toggle = document.getElementById('print-toggle');
+            document.getElementById('print-toggle-thumb').style.transform = on ? 'translateX(18px)' : 'translateX(0)';
+            toggle.setAttribute('aria-checked', String(on));
+            toggle.style.background = on ? '#8ab4f8' : '#5f6368';
+        }
+
+        function onPrintToggle() {
+            if (!analysisActive) { updateStatus('Click a point on the model surface first, then enable print preview.', false); return; }
+            setPrintPreview(!printPreviewOn);
+            updateStatus(printPreviewOn
+                ? 'Print preview on: ink quality fades with depth and slope; blue line marks the safe-zone boundary.'
+                : 'Back to analysis view.', false);
+        }
+
+        function handleArtworkUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => {
+                if (artTexture) artTexture.dispose();
+                artTexture = new THREE.Texture(img);
+                artTexture.colorSpace = THREE.SRGBColorSpace;
+                artTexture.needsUpdate = true;
+                customShaderMaterial.uniforms.uArtTex.value = artTexture;
+                customShaderMaterial.uniforms.uUseArt.value = 1;
+                onArtParamChange();
+                document.getElementById('art-label').textContent = file.name.length > 18 ? file.name.slice(0, 16) + '…' : file.name;
+                updateStatus(`Artwork "${file.name}" loaded. Enable print preview to see it on the surface.`, false);
+                URL.revokeObjectURL(url);
+            };
+            img.onerror = () => { updateStatus('Could not read that image.', false); URL.revokeObjectURL(url); };
+            img.src = url;
+            event.target.value = '';
+        }
+
+        function clearArtwork() {
+            customShaderMaterial.uniforms.uUseArt.value = 0;
+            document.getElementById('art-label').textContent = 'Artwork (PNG/JPG)';
+            updateStatus('Back to the demo flower artwork.', false);
+        }
+
+        function onArtParamChange() {
+            const w = parseFloat(document.getElementById('art-size').value);
+            const rot = parseFloat(document.getElementById('art-rot').value);
+            const aspect = artTexture && artTexture.image ? artTexture.image.height / artTexture.image.width : 1;
+            customShaderMaterial.uniforms.uArtSize.value.set(w, w * aspect);
+            customShaderMaterial.uniforms.uArtRot.value = rot * Math.PI / 180;
+            document.getElementById('art-size-val').textContent = w + ' mm';
+            document.getElementById('art-rot-val').textContent = rot + '°';
+        }
+
+        // ================= Hover chip =================
+        const depthChip = document.getElementById('depth-chip');
+        const depthChipDot = document.getElementById('depth-chip-dot');
+        const depthChipText = document.getElementById('depth-chip-text');
+        let hoverPending = false;
+        let lastHoverEvent = null;
+
+        function onPointerMove(event) {
+            if (!analysisActive) return;
+            lastHoverEvent = event;
+            if (hoverPending) return;
+            hoverPending = true;
+            requestAnimationFrame(() => { hoverPending = false; updateDepthChip(lastHoverEvent); });
+        }
+
+        function zoneColor(depth) {
+            if (depth < 0) return '#8c8c99';
+            if (depth <= cfg.z[0]) return '#009919';
+            if (depth <= cfg.z[1]) return '#00e636';
+            if (depth <= cfg.z[2]) return '#e6cc00';
+            if (depth <= cfg.z[3]) return '#e67300';
+            return '#cc0000';
+        }
+
+        function updateDepthChip(event) {
+            const hit = raycastModel(event.clientX, event.clientY);
+            if (!hit) { hideDepthChip(); return; }
+            const hn = worldNormalFromHit(hit);
+            const cosT = hn.dot(refNormal);
+            if (cosT < -0.1) { hideDepthChip(); return; }
+
+            const depth = new THREE.Vector3().subVectors(refPoint, hit.point).dot(refNormal);
+            const theta = Math.acos(Math.min(Math.max(cosT, 0), 1)) * 180 / Math.PI;
+            const errUm = Math.max(depth, 0) * DOT_ERR_UM_PER_MM;
+
+            let kappa = null;
+            const curAttr = hit.object.geometry.attributes.curvature;
+            if (curAttr && hit.face) {
+                kappa = (curAttr.getX(hit.face.a) + curAttr.getX(hit.face.b) + curAttr.getX(hit.face.c)) / 3;
+            }
+
+            const overCurv = kappa !== null && kappa >= cfg.kappa;
+            const overAng = theta > cfg.angle;
+            depthChipText.textContent =
+                depth.toFixed(2) + ' mm ±' + errUm.toFixed(0) + 'µm · θ ' + theta.toFixed(0) + '°' +
+                (kappa !== null ? ' · κ ' + kappa.toFixed(3) : '');
+            depthChipDot.style.background = overCurv ? '#800080' : (overAng ? '#00808c' : zoneColor(depth));
+            depthChip.style.display = 'flex';
+            depthChip.style.left = (event.clientX + 14) + 'px';
+            depthChip.style.top = (event.clientY - 32) + 'px';
+        }
+
+        function hideDepthChip() { depthChip.style.display = 'none'; }
+
+        // ================= Helpers =================
+        function drawHelpers(point, normal) {
+            clearHelpers();
+            const arrowLen = modelScale * 0.35;
+            helperGroup.add(new THREE.ArrowHelper(normal, point, arrowLen, 0x8ab4f8, arrowLen * 0.2, arrowLen * 0.12));
+
+            const marker = new THREE.Mesh(
+                new THREE.SphereGeometry(Math.max(modelScale * 0.012, 0.3), 16, 16),
+                new THREE.MeshBasicMaterial({ color: 0x8ab4f8 })
+            );
+            marker.position.copy(point);
+            helperGroup.add(marker);
+
+            const planeSize = modelScale * 1.1;
+            const planeMesh = new THREE.Mesh(
+                new THREE.PlaneGeometry(planeSize, planeSize),
+                new THREE.MeshBasicMaterial({
+                    color: 0x8ab4f8, transparent: true, opacity: 0.1, side: THREE.DoubleSide,
+                    depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4
+                })
+            );
+            planeMesh.position.copy(point);
+            planeMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+
+            const gridGeom = new THREE.GridHelper(planeSize, 24, 0x8ab4f8, 0x8ab4f8);
+            gridGeom.material.opacity = 0.25;
+            gridGeom.material.transparent = true;
+            gridGeom.material.polygonOffset = true;
+            gridGeom.material.polygonOffsetFactor = -5;
+            gridGeom.material.polygonOffsetUnits = -5;
+            gridGeom.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1));
+            planeMesh.add(gridGeom);
+            helperGroup.add(planeMesh);
+        }
+
+        function clearHelpers() {
+            helperGroup.traverse((child) => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+                    else child.material.dispose();
+                }
+            });
+            helperGroup.clear();
+        }
+
+        // ================= Geometry prep: curvature + Gaussian =================
+        function addCurvatureAttributes(geometry) {
+            const pos = geometry.attributes.position;
+            const nor = geometry.attributes.normal;
+            const index = geometry.index;
+            const count = pos.count;
+            const curv = new Float32Array(count);
+            const gauss = new Float32Array(count);
+            let edgeSum = 0, edgeN = 0;
+
+            if (index && nor) {
+                const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
+                const nA = new THREE.Vector3(), nB = new THREE.Vector3();
+                const e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
+                const angleSum = new Float32Array(count);
+                const areaSum = new Float32Array(count);
+                const edgeCount = new Map(); // boundary detection
+
+                const edge = (i, j) => {
+                    pA.fromBufferAttribute(pos, i); pB.fromBufferAttribute(pos, j);
+                    const dist = pA.distanceTo(pB);
+                    if (dist < 1e-6) return;
+                    edgeSum += dist; edgeN++;
+                    nA.fromBufferAttribute(nor, i); nB.fromBufferAttribute(nor, j);
+                    const k = nA.angleTo(nB) / dist;
+                    if (k > curv[i]) curv[i] = k;
+                    if (k > curv[j]) curv[j] = k;
+                    const key = i < j ? i * count + j : j * count + i;
+                    edgeCount.set(key, (edgeCount.get(key) || 0) + 1);
+                };
+
+                const cornerAngle = (i, j, k) => {
+                    pA.fromBufferAttribute(pos, i);
+                    pB.fromBufferAttribute(pos, j);
+                    pC.fromBufferAttribute(pos, k);
+                    e1.subVectors(pB, pA); e2.subVectors(pC, pA);
+                    return e1.angleTo(e2);
+                };
+
+                for (let t = 0; t < index.count; t += 3) {
+                    const a = index.getX(t), b = index.getX(t + 1), c = index.getX(t + 2);
+                    edge(a, b); edge(b, c); edge(c, a);
+
+                    // Triangle area (for Gaussian normalization)
+                    pA.fromBufferAttribute(pos, a); pB.fromBufferAttribute(pos, b); pC.fromBufferAttribute(pos, c);
+                    e1.subVectors(pB, pA); e2.subVectors(pC, pA);
+                    const area = e1.cross(e2).length() * 0.5;
+                    const third = area / 3;
+                    areaSum[a] += third; areaSum[b] += third; areaSum[c] += third;
+
+                    angleSum[a] += cornerAngle(a, b, c);
+                    angleSum[b] += cornerAngle(b, c, a);
+                    angleSum[c] += cornerAngle(c, a, b);
+                }
+
+                // Boundary vertices: any incident edge used only once
+                const onBoundary = new Uint8Array(count);
+                for (const [key, cnt] of edgeCount) {
+                    if (cnt === 1) {
+                        onBoundary[Math.floor(key / count)] = 1;
+                        onBoundary[key % count] = 1;
+                    }
+                }
+
+                // Gaussian curvature via angle deficit: K = (2π - Σθ) / A_mixed
+                for (let i = 0; i < count; i++) {
+                    if (onBoundary[i] || areaSum[i] < 1e-9) { gauss[i] = 0; continue; }
+                    gauss[i] = (2 * Math.PI - angleSum[i]) / areaSum[i];
+                }
+            }
+
+            geometry.setAttribute('curvature', new THREE.BufferAttribute(curv, 1));
+            geometry.setAttribute('kgauss', new THREE.BufferAttribute(gauss, 1));
+            return edgeN > 0 ? edgeSum / edgeN : 0;
+        }
+
+        function prepareGeometry(child) {
+            let g = child.geometry;
+            if (!g.index) {
+                g.deleteAttribute('normal');
+                if (g.attributes.uv) g.deleteAttribute('uv');
+                g = mergeVertices(g, 1e-4);
+                g.computeVertexNormals();
+                child.geometry = g;
+            } else if (!g.attributes.normal) {
+                g.computeVertexNormals();
+            }
+            return addCurvatureAttributes(g);
+        }
+
+        // ================= Model lifecycle =================
+        function disposeCurrentModel() {
+            if (!currentModel) return;
+            scene.remove(currentModel);
+            currentModel.traverse((child) => { if (child.isMesh) child.geometry.dispose(); });
+            currentModel = null;
+        }
+
+        function removeModel() {
+            if (!currentModel) { updateStatus('No model to remove.', false); return; }
+            disposeCurrentModel();
+            resetAnalysisState();
+            savedPoints = []; activePointIdx = -1; renderPointChips();
+            updateStatus('Model removed. Upload a new model or click "Default".', false);
+        }
+
+        function restoreDefaultModel() {
+            disposeCurrentModel();
+            savedPoints = []; activePointIdx = -1; renderPointChips();
+            loadDefaultModel();
+        }
+
+        function bakeUnitScale(object, factor) {
+            if (factor === 1) return;
+            const seen = new Set();
+            const m = new THREE.Matrix4().makeScale(factor, factor, factor);
+            object.traverse(c => {
+                if (c.isMesh && !seen.has(c.geometry)) {
+                    seen.add(c.geometry);
+                    c.geometry.applyMatrix4(m);
+                }
+            });
+        }
+
+        function setupLoadedModel(object) {
+            disposeCurrentModel();
+            savedPoints = []; activePointIdx = -1; renderPointChips();
+            currentModel = object;
+
+            let edgeAcc = 0, meshCount = 0;
+            currentModel.traverse((child) => {
+                if (child.isMesh) {
+                    edgeAcc += prepareGeometry(child);
+                    meshCount++;
+                    child.material = customShaderMaterial;
+                }
+            });
+            meshAvgEdge = meshCount > 0 ? edgeAcc / meshCount : 0;
+
+            scene.add(currentModel);
+            resetAnalysisState();
+
+            const box = new THREE.Box3().setFromObject(currentModel);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            currentModel.position.sub(center);
+
+            const maxDim = Math.max(size.x, size.y, size.z);
+            modelScale = maxDim || 60;
+            camera.near = Math.max(maxDim / 1000, 0.01);
+            camera.far = Math.max(maxDim * 20, 2000);
+            camera.updateProjectionMatrix();
+            camera.position.set(maxDim * 0.8, maxDim * 0.8, maxDim * 0.8);
+            controls.target.set(0, 0, 0);
+            controls.update();
+
+            if (meshAvgEdge > 1.5) {
+                updateStatus(`Warning: coarse mesh (avg edge ${meshAvgEdge.toFixed(1)}mm). Curvature may be underestimated — re-export with max edge ≤ 1mm.`, false);
+            }
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const extension = file.name.split('.').pop().toLowerCase();
+            const unitFactor = parseFloat(document.getElementById('units-select').value);
+            updateStatus(`Parsing ${file.name}...`, true);
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                const contents = e.target.result;
+                const done = () => updateStatus(`${file.name} loaded. Click the surface to start analysis.`, false);
+                try {
+                    if (extension === 'obj') {
+                        const object = new OBJLoader().parse(contents);
+                        bakeUnitScale(object, unitFactor);
+                        setupLoadedModel(object); done();
+                    } else if (extension === 'stl') {
+                        const geometry = new STLLoader().parse(contents);
+                        geometry.applyMatrix4(new THREE.Matrix4().makeScale(unitFactor, unitFactor, unitFactor));
+                        setupLoadedModel(new THREE.Mesh(geometry, customShaderMaterial)); done();
+                    } else if (extension === 'glb' || extension === 'gltf') {
+                        import('three/addons/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
+                            new GLTFLoader().parse(contents, '', (gltf) => {
+                                bakeUnitScale(gltf.scene, unitFactor);
+                                setupLoadedModel(gltf.scene); done();
+                            }, (err) => { console.error(err); updateStatus('Failed to parse the glTF file.', false); });
+                        }).catch(err => { console.error(err); updateStatus('Failed to load the glTF parser.', false); });
+                    } else if (extension === '3dm') {
+                        import('three/addons/loaders/Rhino3dmLoader.js').then(({ Rhino3dmLoader }) => {
+                            const loader = new Rhino3dmLoader();
+                            loader.setLibraryPath('https://cdn.jsdelivr.net/npm/rhino3dm@8.0.0-beta2/');
+                            loader.parse(contents, (object) => {
+                                bakeUnitScale(object, unitFactor);
+                                setupLoadedModel(object); done();
+                            }, (err) => { console.error(err); updateStatus('Failed to parse the NURBS file.', false); });
+                        }).catch(err => { console.error(err); updateStatus('Failed to load the 3DM parser. Please use OBJ or STL instead.', false); });
+                    } else {
+                        updateStatus('Unsupported format. Please upload .obj, .stl, .3dm, or .glb.', false);
+                    }
+                } catch (error) {
+                    console.error(error);
+                    updateStatus('Error while parsing the file.', false);
+                }
+            };
+
+            if (extension === 'obj') reader.readAsText(file);
+            else reader.readAsArrayBuffer(file);
+            event.target.value = '';
+        }
+
+        function loadDefaultModel() {
+            const geometry = new THREE.SphereGeometry(30, 128, 128);
+            geometry.scale(1.0, 0.4, 1.8);
+            const positionAttribute = geometry.getAttribute('position');
+            const vertex = new THREE.Vector3();
+            for (let i = 0; i < positionAttribute.count; i++) {
+                vertex.fromBufferAttribute(positionAttribute, i);
+                if (Math.abs(vertex.x) < 15 && vertex.y > 0 && vertex.z > -10) {
+                    vertex.y -= 1.0 * Math.cos((vertex.x / 15) * Math.PI / 2);
+                }
+                positionAttribute.setXYZ(i, vertex.x, vertex.y, vertex.z);
+            }
+            geometry.computeVertexNormals();
+            const mesh = new THREE.Mesh(geometry, customShaderMaterial);
+            mesh.rotation.y = Math.PI / 2;
+            setupLoadedModel(mesh);
+            updateStatus('Default model loaded. Click the highest point of the surface to analyze.', false);
+        }
+
+        function resetAnalysisState() {
+            customShaderMaterial.uniforms.uIsActive.value = 0;
+            analysisActive = false;
+            setPrintPreview(false);
+            hideDepthChip();
+            clearHelpers();
+            document.getElementById('results-panel').classList.remove('active');
+        }
+
+        function resetView() {
+            if (!currentModel) return;
+            resetAnalysisState();
+            savedPoints = []; activePointIdx = -1; renderPointChips();
+            const box = new THREE.Box3().setFromObject(currentModel);
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            camera.position.set(maxDim * 0.8, maxDim * 0.8, maxDim * 0.8);
+            controls.target.set(0, 0, 0);
+            updateStatus('View and analysis points reset.', false);
+        }
+
+        // ================= Exports =================
+        function exportSnapshot() {
+            renderer.render(scene, camera);
+            const url = renderer.domElement.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'print-analysis.png';
+            a.click();
+            updateStatus('Snapshot saved as print-analysis.png.', false);
+        }
+
+        function exportBoundaryDXF() {
+            if (!analysisActive) { updateStatus('Click an analysis point first — the DXF exports the safe-zone boundary for that pose.', false); return; }
+            const segs = [];
+            const z2 = cfg.z[1];
+            const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
+            const tmp = new THREE.Vector3();
+            const P = [pA, pB, pC];
+            const D = [0, 0, 0];
+
+            currentModel.updateMatrixWorld(true);
+            currentModel.traverse((child) => {
+                if (!child.isMesh) return;
+                const g = child.geometry;
+                const pos = g.attributes.position;
+                const idx = g.index;
+                if (!idx) return;
+
+                for (let t = 0; t < idx.count; t += 3) {
+                    for (let k = 0; k < 3; k++) {
+                        P[k].fromBufferAttribute(pos, idx.getX(t + k)).applyMatrix4(child.matrixWorld);
+                        D[k] = tmp.subVectors(refPoint, P[k]).dot(refNormal);
+                    }
+                    const pts = [];
+                    for (let k = 0; k < 3; k++) {
+                        const a = k, b = (k + 1) % 3;
+                        if ((D[a] - z2) * (D[b] - z2) < 0) {
+                            const s = (z2 - D[a]) / (D[b] - D[a]);
+                            pts.push(new THREE.Vector3().lerpVectors(P[a], P[b], s));
+                        }
+                    }
+                    if (pts.length === 2) segs.push(pts);
+                }
+            });
+
+            if (segs.length === 0) { updateStatus('No safe-zone boundary found — the whole visible surface may be inside (or outside) the limit.', false); return; }
+
+            let dxf = '0\nSECTION\n2\nENTITIES\n';
+            for (const [a, b] of segs) {
+                dxf += `0\nLINE\n8\nPRINT_BOUNDARY\n10\n${a.x.toFixed(4)}\n20\n${a.y.toFixed(4)}\n30\n${a.z.toFixed(4)}\n11\n${b.x.toFixed(4)}\n21\n${b.y.toFixed(4)}\n31\n${b.z.toFixed(4)}\n`;
+            }
+            dxf += '0\nENDSEC\n0\nEOF\n';
+
+            const blob = new Blob([dxf], { type: 'application/dxf' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'print-boundary.dxf';
+            a.click();
+            URL.revokeObjectURL(a.href);
+            updateStatus(`Exported ${segs.length} boundary segments (layer PRINT_BOUNDARY). Note: model is re-centered at origin — align in Rhino as needed.`, false);
+        }
+
+        // ================= Status / loop =================
+        function updateStatus(msg, isLoading = false) {
+            const bar = document.getElementById('status-bar');
+            document.getElementById('loader-icon').style.display = isLoading ? 'inline-block' : 'none';
+            document.getElementById('status-text').textContent = msg;
+            bar.classList.remove('snackbar-hidden');
+            bar.classList.add('snackbar-visible');
+            if (window.statusTimeout) clearTimeout(window.statusTimeout);
+            if (!isLoading) {
+                window.statusTimeout = setTimeout(() => {
+                    bar.classList.remove('snackbar-visible');
+                    bar.classList.add('snackbar-hidden');
+                }, 5000);
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        try { init(); } catch (error) {
+            console.error("Initialization Error:", error);
+            updateStatus("Initialization failed: " + error.message, false);
+        }
+    </script>
+</body>
+</html>

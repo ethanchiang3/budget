@@ -139,7 +139,10 @@
                     <div class="w-9 h-9 rounded-full bg-[#8ab4f8]/10 flex items-center justify-center text-[#8ab4f8] shrink-0">
                         <span class="material-symbols-rounded text-xl">3d_rotation</span>
                     </div>
-                    <h1 class="text-lg font-medium text-gray-100 tracking-tight">Print Depth Analyzer</h1>
+                    <h1 class="text-lg font-medium text-gray-100 tracking-tight flex-1">Print Depth Analyzer</h1>
+                    <button id="resources-btn" class="icon-btn !w-8 !h-8 !p-0 shrink-0" title="References &amp; further reading" aria-label="References and further reading" aria-haspopup="dialog">
+                        <span class="material-symbols-rounded text-[18px]">menu_book</span>
+                    </button>
                 </div>
                 <p class="text-xs text-gray-400 mb-4 leading-relaxed">
                     Click the highest point of the surface to analyze depth falloff, incidence angle, and curvature against the active machine profile.
@@ -350,7 +353,53 @@
         </div>
     </div>
 
+    <!-- References panel: background reading for the DTS/curvature model this tool implements -->
+    <div id="resources-overlay" style="display:none;" class="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="resources-title"
+            class="bg-[#2d2e31] border border-[#3c4043] shadow-elevation-3 rounded-3xl w-full max-w-md max-h-[80vh] overflow-y-auto p-5">
+            <div class="flex items-center justify-between mb-3">
+                <h2 id="resources-title" class="text-sm font-medium text-gray-200 uppercase tracking-wide flex items-center gap-2">
+                    <span class="material-symbols-rounded text-gray-500 text-lg">menu_book</span>
+                    References &amp; Further Reading
+                </h2>
+                <button id="resources-close-btn" class="icon-btn !w-8 !h-8 !p-0" aria-label="Close references">
+                    <span class="material-symbols-rounded text-[18px]">close</span>
+                </button>
+            </div>
+            <div class="space-y-4 text-xs text-gray-300 leading-relaxed">
+                <div>
+                    <div class="section-title mb-1.5">Direct-to-shape &amp; DOD printing</div>
+                    <ul class="space-y-1.5 list-disc list-inside marker:text-gray-600">
+                        <li><a href="https://doi.org/10.3390/machines11050568" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Drop placement accuracy testing of robot-guided inkjet printing onto 3D objects</a> — Machines (MDPI), 2023</li>
+                        <li><a href="https://www.rea-jet.com/en/technologies/drop-on-demand-inkjet-printing-technology" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Drop-on-demand (DOD) printing technology overview</a> — REA JET</li>
+                        <li><a href="https://graphtech.us/what-makes-a-good-dod-inkjet-transport/" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Maximizing print quality: tips for using DOD inkjets</a> — GraphTech</li>
+                    </ul>
+                </div>
+                <div>
+                    <div class="section-title mb-1.5">Curvature &amp; developable surfaces</div>
+                    <ul class="space-y-1.5 list-disc list-inside marker:text-gray-600">
+                        <li><a href="https://en.wikipedia.org/wiki/Developable_surface" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Developable surface</a> — Wikipedia (why zero-Gaussian-curvature areas print without distortion)</li>
+                        <li><a href="https://groups.csail.mit.edu/gdpgroup/assets/6838_spring_2021/chapter5.pdf" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Curvature of Smooth and Discrete Surfaces</a> — MIT 6.838 course notes</li>
+                        <li><a href="http://math.uchicago.edu/~may/REU2015/REUPapers/Upadhyay.pdf" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Gauss&#8211;Bonnet for Discrete Surfaces</a> — angle-deficit curvature, the method this tool uses for |K|</li>
+                        <li><a href="https://web.engr.oregonstate.edu/~grimmc/Curvature/cagd_curvature_gatzke_grimm_submit.pdf" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Estimating Curvature on Triangular Meshes</a> — Gatzke &amp; Grimm</li>
+                    </ul>
+                </div>
+                <div>
+                    <div class="section-title mb-1.5">Implementation references</div>
+                    <ul class="space-y-1.5 list-disc list-inside marker:text-gray-600">
+                        <li><a href="https://threejs.org/docs/#examples/en/loaders/OBJLoader" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">three.js OBJLoader / STLLoader / GLTFLoader</a> — model import docs</li>
+                        <li><a href="https://threejs.org/docs/pages/Rhino3dmLoader.html" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">three.js Rhino3dmLoader</a> — .3dm import docs</li>
+                        <li><a href="https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-DXF/files/GUID-FCEF5726-53AE-4C43-B4EA-C84EB8686A66.htm" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">DXF Reference — LINE entity</a> — Autodesk, format used by Boundary DXF export</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
+        // Loader docs: https://threejs.org/docs/#examples/en/loaders/OBJLoader
+        // (STLLoader, GLTFLoader below share that index page; Rhino3dmLoader
+        // has its own page — see the References panel for direct links.)
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
@@ -364,11 +413,13 @@
         // ================= Machine profiles =================
         // Grounded in DTS literature: DOD drops hold accuracy for ~3-4mm of
         // flight; >5mm jetting distance is the accepted quality failure point.
+        // See: "Drop placement accuracy testing of robot-guided inkjet
+        // printing onto 3D objects", Machines (MDPI) 2023 — doi.org/10.3390/machines11050568
         const PROFILES = {
             standard:  { z: [1.5, 3.0, 4.0, 5.0],  kappa: 0.086, angle: 45 },
             highthrow: { z: [3.0, 6.0, 8.0, 10.0], kappa: 0.086, angle: 50 }
         };
-        const DOT_ERR_UM_PER_MM = 20; // est. landing error growth with throw distance
+        const DOT_ERR_UM_PER_MM = 20; // est. landing error growth with throw distance (see reference above)
 
         let cfg = { z: [...PROFILES.standard.z], kappa: PROFILES.standard.kappa, angle: PROFILES.standard.angle };
 
@@ -635,6 +686,14 @@
             document.getElementById('art-size').addEventListener('input', onArtParamChange);
             document.getElementById('art-rot').addEventListener('input', onArtParamChange);
             document.getElementById('status-bar').addEventListener('click', dismissStatus);
+            document.getElementById('resources-btn').addEventListener('click', openResources);
+            document.getElementById('resources-close-btn').addEventListener('click', closeResources);
+            document.getElementById('resources-overlay').addEventListener('click', (e) => {
+                if (e.target.id === 'resources-overlay') closeResources();
+            });
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') closeResources();
+            });
             document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', onViewModeClick));
             ['cfg-z1','cfg-z2','cfg-z3','cfg-z4','cfg-kappa','cfg-angle'].forEach(id => {
                 document.getElementById(id).addEventListener('change', onCfgInputChange);
@@ -1246,7 +1305,10 @@
                     }
                 }
 
-                // Gaussian curvature via angle deficit: K = (2π - Σθ) / A_mixed
+                // Gaussian curvature via angle deficit (discrete Gauss-Bonnet):
+                // K = (2π - Σθ) / A_mixed. See "Gauss-Bonnet for Discrete
+                // Surfaces" (Upadhyay) and MIT 6.838 "Curvature of Smooth and
+                // Discrete Surfaces" — linked in the References panel.
                 for (let i = 0; i < count; i++) {
                     if (onBoundary[i] || areaSum[i] < 1e-9) { gauss[i] = 0; continue; }
                     gauss[i] = (2 * Math.PI - angleSum[i]) / areaSum[i];
@@ -1445,6 +1507,7 @@
             updateStatus('Snapshot saved as print-analysis.png.', false);
         }
 
+        // DXF LINE entity group codes: https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-DXF/files/GUID-FCEF5726-53AE-4C43-B4EA-C84EB8686A66.htm
         function exportBoundaryDXF() {
             if (!analysisActive) { updateStatus('Click an analysis point first — the DXF exports the safe-zone boundary for that pose.', false); return; }
             const segs = [];
@@ -1494,6 +1557,20 @@
             a.click();
             URL.revokeObjectURL(a.href);
             updateStatus(`Exported ${segs.length} boundary segments (layer PRINT_BOUNDARY). Note: model is re-centered at origin — align in Rhino as needed.`, false);
+        }
+
+        // ================= References panel =================
+        function openResources() {
+            const overlay = document.getElementById('resources-overlay');
+            overlay.style.display = 'flex';
+            document.getElementById('resources-close-btn').focus();
+        }
+
+        function closeResources() {
+            const overlay = document.getElementById('resources-overlay');
+            if (overlay.style.display === 'none') return;
+            overlay.style.display = 'none';
+            document.getElementById('resources-btn').focus();
         }
 
         // ================= Status / loop =================

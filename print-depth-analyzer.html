@@ -60,6 +60,13 @@
         ::-webkit-scrollbar-thumb { background: #5f6368; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #80868b; }
 
+        /* Some browsers (notably mobile Safari) ignore ::-webkit-scrollbar
+           styling on div overflow and fall back to a bulky system scrollbar.
+           Hide it outright on the scrollable panels — scrolling still works
+           via touch/wheel/keyboard, it's just not drawn. */
+        .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+        .no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
         .loader { border: 3px solid rgba(26, 115, 232, 0.2); border-top: 3px solid #1a73e8; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
@@ -134,7 +141,7 @@
         <div class="flex justify-between items-start gap-4 flex-wrap min-h-0" style="max-height: calc(100vh - 7rem);">
 
             <!-- Left Controls -->
-            <div class="bg-[#2d2e31]/95 backdrop-blur shadow-elevation-3 p-5 rounded-3xl w-full max-w-sm interactive border border-[#3c4043] overflow-y-auto" style="max-height: calc(100vh - 7rem);">
+            <div class="bg-[#2d2e31]/95 backdrop-blur shadow-elevation-3 p-5 rounded-3xl w-full max-w-sm interactive border border-[#3c4043] overflow-y-auto no-scrollbar" style="max-height: calc(100vh - 7rem);">
                 <div class="flex items-center gap-3 mb-1.5">
                     <div class="w-9 h-9 rounded-full bg-[#8ab4f8]/10 flex items-center justify-center text-[#8ab4f8] shrink-0">
                         <span class="material-symbols-rounded text-xl">3d_rotation</span>
@@ -369,7 +376,7 @@
     <!-- References panel: background reading for the DTS/curvature model this tool implements -->
     <div id="resources-overlay" style="display:none;" class="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm items-center justify-center p-4">
         <div role="dialog" aria-modal="true" aria-labelledby="resources-title"
-            class="bg-[#2d2e31] border border-[#3c4043] shadow-elevation-3 rounded-3xl w-full max-w-md max-h-[80vh] overflow-y-auto p-5">
+            class="bg-[#2d2e31] border border-[#3c4043] shadow-elevation-3 rounded-3xl w-full max-w-md max-h-[80vh] overflow-y-auto no-scrollbar p-5">
             <div class="flex items-center justify-between mb-3">
                 <h2 id="resources-title" class="text-sm font-medium text-gray-200 uppercase tracking-wide flex items-center gap-2">
                     <span class="material-symbols-rounded text-gray-500 text-lg">menu_book</span>

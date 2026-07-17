@@ -263,10 +263,7 @@
 
                 <!-- RESULTS -->
                 <div id="results-panel" class="mt-4 pt-4 border-t border-[#3c4043]">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="section-title">Analysis Results</h3>
-                        <span id="mesh-info" class="text-[10px] text-gray-500"></span>
-                    </div>
+                    <h3 class="section-title mb-2">Analysis Results</h3>
                     <div id="points-row" class="flex flex-wrap gap-1.5 mb-3"></div>
                     <div class="grid grid-cols-2 gap-2">
                         <div class="bg-white/5 rounded-2xl p-2.5" title="Deepest point on the visible, front-facing surface relative to the clicked reference point">
@@ -277,20 +274,30 @@
                             <div class="text-[10px] text-gray-400 mb-0.5">Beyond Safe Zone</div>
                             <div class="text-base font-medium text-gray-100"><span id="stat-over">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
                         </div>
-                        <div class="bg-white/5 rounded-2xl p-2.5" title="Share of visible surface with curvature at or above the machine's max κ">
-                            <div class="text-[10px] text-gray-400 mb-0.5">Over-Curvature (κ)</div>
-                            <div class="text-base font-medium text-gray-100"><span id="stat-curv">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
-                        </div>
-                        <div class="bg-white/5 rounded-2xl p-2.5" title="Share of visible surface tilted beyond the machine's max incidence angle θ">
-                            <div class="text-[10px] text-gray-400 mb-0.5">Steep Angle (θ)</div>
-                            <div class="text-base font-medium text-gray-100"><span id="stat-angle">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
-                        </div>
-                        <div class="bg-white/5 rounded-2xl p-2.5 col-span-2" title="Share of visible surface with Gaussian curvature high enough that artwork will distort or pucker when printed flat">
-                            <div class="text-[10px] text-gray-400 mb-0.5">Non-Developable (|K|)</div>
-                            <div class="text-base font-medium text-gray-100"><span id="stat-gauss">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
-                        </div>
                     </div>
                     <div id="stat-verdict" class="mt-3 text-xs font-medium flex items-start gap-1.5"></div>
+
+                    <details id="stats-details" class="group mt-3 pt-3 border-t border-[#3c4043]">
+                        <summary class="flex items-center justify-between cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-[11px] font-medium text-gray-500 hover:text-gray-300 py-1">
+                            <span>More detail</span>
+                            <span class="material-symbols-rounded text-[16px] transition-transform group-open:rotate-180">expand_more</span>
+                        </summary>
+                        <div class="grid grid-cols-2 gap-2 mt-2">
+                            <div class="bg-white/5 rounded-2xl p-2.5" title="Share of visible surface with curvature at or above the machine's max κ">
+                                <div class="text-[10px] text-gray-400 mb-0.5">Over-Curvature (κ)</div>
+                                <div class="text-base font-medium text-gray-100"><span id="stat-curv">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
+                            </div>
+                            <div class="bg-white/5 rounded-2xl p-2.5" title="Share of visible surface tilted beyond the machine's max incidence angle θ">
+                                <div class="text-[10px] text-gray-400 mb-0.5">Steep Angle (θ)</div>
+                                <div class="text-base font-medium text-gray-100"><span id="stat-angle">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
+                            </div>
+                            <div class="bg-white/5 rounded-2xl p-2.5 col-span-2" title="Share of visible surface with Gaussian curvature high enough that artwork will distort or pucker when printed flat">
+                                <div class="text-[10px] text-gray-400 mb-0.5">Non-Developable (|K|)</div>
+                                <div class="text-base font-medium text-gray-100"><span id="stat-gauss">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
+                            </div>
+                        </div>
+                        <div class="mt-2 text-[10px] text-gray-500" id="mesh-info"></div>
+                    </details>
                 </div>
             </div>
 

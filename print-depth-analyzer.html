@@ -179,16 +179,22 @@
                     <option value="highthrow">High-Throw Head (throw ≤ 10mm)</option>
                     <option value="custom">Custom</option>
                 </select>
-                <div class="grid grid-cols-3 gap-2 mb-1">
-                    <div><div class="text-[10px] text-gray-500 mb-0.5">Optimal ≤ mm</div><input type="number" id="cfg-z1" step="0.5" min="0.1" aria-label="Optimal depth threshold in millimeters"></div>
-                    <div><div class="text-[10px] text-gray-500 mb-0.5">Safe ≤ mm</div><input type="number" id="cfg-z2" step="0.5" min="0.1" aria-label="Safe depth threshold in millimeters"></div>
-                    <div><div class="text-[10px] text-gray-500 mb-0.5">Marginal ≤ mm</div><input type="number" id="cfg-z3" step="0.5" min="0.1" aria-label="Marginal depth threshold in millimeters"></div>
-                </div>
-                <div class="grid grid-cols-3 gap-2 mb-4">
-                    <div><div class="text-[10px] text-gray-500 mb-0.5">Limit ≤ mm</div><input type="number" id="cfg-z4" step="0.5" min="0.1" aria-label="Depth limit threshold in millimeters"></div>
-                    <div><div class="text-[10px] text-gray-500 mb-0.5">Max κ mm⁻¹</div><input type="number" id="cfg-kappa" step="0.005" min="0.005" aria-label="Maximum curvature kappa in inverse millimeters"></div>
-                    <div><div class="text-[10px] text-gray-500 mb-0.5">Max θ deg</div><input type="number" id="cfg-angle" step="5" min="5" max="85" aria-label="Maximum incidence angle theta in degrees"></div>
-                </div>
+                <details id="cfg-details" class="group mb-4">
+                    <summary class="flex items-center justify-between cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-[11px] font-medium text-gray-500 hover:text-gray-300 py-1.5">
+                        <span>Thresholds</span>
+                        <span class="material-symbols-rounded text-[16px] transition-transform group-open:rotate-180">expand_more</span>
+                    </summary>
+                    <div class="grid grid-cols-3 gap-2 mb-1 mt-2">
+                        <div><div class="text-[10px] text-gray-500 mb-0.5">Optimal ≤ mm</div><input type="number" id="cfg-z1" step="0.5" min="0.1" aria-label="Optimal depth threshold in millimeters"></div>
+                        <div><div class="text-[10px] text-gray-500 mb-0.5">Safe ≤ mm</div><input type="number" id="cfg-z2" step="0.5" min="0.1" aria-label="Safe depth threshold in millimeters"></div>
+                        <div><div class="text-[10px] text-gray-500 mb-0.5">Marginal ≤ mm</div><input type="number" id="cfg-z3" step="0.5" min="0.1" aria-label="Marginal depth threshold in millimeters"></div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div><div class="text-[10px] text-gray-500 mb-0.5">Limit ≤ mm</div><input type="number" id="cfg-z4" step="0.5" min="0.1" aria-label="Depth limit threshold in millimeters"></div>
+                        <div><div class="text-[10px] text-gray-500 mb-0.5">Max κ mm⁻¹</div><input type="number" id="cfg-kappa" step="0.005" min="0.005" aria-label="Maximum curvature kappa in inverse millimeters"></div>
+                        <div><div class="text-[10px] text-gray-500 mb-0.5">Max θ deg</div><input type="number" id="cfg-angle" step="5" min="5" max="85" aria-label="Maximum incidence angle theta in degrees"></div>
+                    </div>
+                </details>
 
                 <!-- ANALYSIS -->
                 <div class="section-title mb-2">Analysis</div>
@@ -730,6 +736,8 @@
                 cfg = { z: [...p.z], kappa: p.kappa, angle: p.angle };
                 fillCfgInputs();
                 applyCfg();
+            } else {
+                document.getElementById('cfg-details').open = true;
             }
         }
 

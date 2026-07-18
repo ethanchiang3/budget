@@ -46,6 +46,12 @@
     </script>
 
     <style>
+        :root {
+            --accent: #8ab4f8;
+            --border-subtle: rgba(255,255,255,0.08);
+            --border-hover: rgba(255,255,255,0.18);
+            --focus-ring: 0 0 0 3px rgba(138,180,248,0.28);
+        }
         body { margin: 0; overflow: hidden; background-color: #202124; color: #e8eaed; font-family: 'Roboto', sans-serif; }
         #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
         #ui-layer { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 1.5rem; }
@@ -76,7 +82,7 @@
 
         #depth-chip {
             position: fixed; z-index: 20; pointer-events: none;
-            background: #2d2e31; border: 1px solid #5f6368; color: #e8eaed;
+            background: #2d2e31; border: 1px solid var(--border-hover); color: #e8eaed;
             border-radius: 9999px; padding: 4px 12px 4px 8px;
             font-size: 12px; font-weight: 500; display: none; align-items: center;
             gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.35); white-space: nowrap;
@@ -87,34 +93,52 @@
         #results-panel.active { display: block; animation: fadeUp 0.25s cubic-bezier(0.2, 0, 0, 1); }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
-        input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px; background: #5f6368; outline: none; }
-        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #8ab4f8; cursor: pointer; border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
-        input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #8ab4f8; cursor: pointer; border: none; }
-        input[type="range"]:focus-visible { outline: 2px solid #8ab4f8; outline-offset: 4px; }
+        input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px; background: var(--border-hover); outline: none; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); cursor: pointer; border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); cursor: pointer; border: none; }
+        input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
         input[type="number"], select {
-            background: #202124; border: 1px solid #5f6368; border-radius: 8px;
-            color: #e8eaed; font-size: 12px; padding: 4px 6px; width: 100%;
+            background: #202124; border: 1px solid var(--border-subtle); border-radius: 10px;
+            color: #e8eaed; font-size: 12px; padding: 7px 8px; width: 100%;
+            transition: border-color .15s, box-shadow .15s;
         }
-        input[type="number"]:focus, select:focus { outline: 1px solid #8ab4f8; border-color: #8ab4f8; }
+        input[type="number"]:hover, select:hover { border-color: var(--border-hover); }
+        input[type="number"]:focus, select:focus {
+            outline: none; border-color: var(--accent); box-shadow: var(--focus-ring);
+        }
         input[type=number]::-webkit-inner-spin-button { opacity: 0.4; }
 
-        .seg-btn { flex: 1; font-size: 11px; font-weight: 500; padding: 5px 0; border: 1px solid #5f6368; color: #9aa0a6; background: transparent; transition: all .15s; }
+        /* Dropdowns: strip the native control and draw a minimal chevron so
+           the arrow reads consistently instead of each browser/OS's own glyph. */
+        select {
+            appearance: none; -webkit-appearance: none; -moz-appearance: none;
+            font-size: 13px; font-weight: 500; padding: 9px 32px 9px 12px;
+            cursor: pointer;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa0a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            background-size: 16px;
+        }
+        select::-ms-expand { display: none; }
+
+        .seg-btn { flex: 1; font-size: 11px; font-weight: 500; padding: 6px 0; border: 1px solid var(--border-subtle); color: #9aa0a6; background: transparent; transition: all .15s; }
         .seg-btn:first-child { border-radius: 9999px 0 0 9999px; }
         .seg-btn:last-child { border-radius: 0 9999px 9999px 0; border-left: none; }
         .seg-btn:nth-child(2) { border-left: none; }
-        .seg-btn.seg-active { background: rgba(138,180,248,0.15); color: #8ab4f8; border-color: #8ab4f8; }
+        .seg-btn:hover { color: #e8eaed; }
+        .seg-btn.seg-active { background: rgba(138,180,248,0.15); color: var(--accent); border-color: var(--accent); }
 
         .stripe-swatch { background: repeating-linear-gradient(45deg, #800080 0 3px, #b04ab0 3px 6px); }
 
-        .point-chip { font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 9999px; border: 1px solid #5f6368; color: #bdc1c6; background: transparent; cursor: pointer; transition: all .15s; }
-        .point-chip:hover { border-color: #8ab4f8; color: #8ab4f8; }
-        .point-chip.point-active { background: rgba(138,180,248,0.15); border-color: #8ab4f8; color: #8ab4f8; }
+        .point-chip { font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 9999px; border: 1px solid var(--border-subtle); color: #bdc1c6; background: transparent; cursor: pointer; transition: all .15s; }
+        .point-chip:hover { border-color: var(--accent); color: var(--accent); }
+        .point-chip.point-active { background: rgba(138,180,248,0.15); border-color: var(--accent); color: var(--accent); }
 
         .section-title { font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: #9aa0a6; }
-        .icon-btn { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 8px 4px; border-radius: 9999px; border: 1px solid #5f6368; color: #e8eaed; background: transparent; transition: background .15s; }
-        .icon-btn:hover { background: rgba(255,255,255,0.05); }
-        .icon-btn:disabled:hover { background: transparent; }
+        .icon-btn { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 8px 4px; border-radius: 9999px; border: 1px solid var(--border-subtle); color: #e8eaed; background: transparent; transition: background .15s, border-color .15s; }
+        .icon-btn:hover { background: rgba(255,255,255,0.05); border-color: var(--border-hover); }
+        .icon-btn:disabled:hover { background: transparent; border-color: var(--border-subtle); }
         .icon-btn.busy .material-symbols-rounded { animation: spin 1s linear infinite; }
 
         button:disabled, .icon-btn:disabled, select:disabled, input:disabled {
@@ -122,8 +146,21 @@
         }
 
         button:focus-visible, select:focus-visible, .point-chip:focus-visible {
-            outline: 2px solid #8ab4f8; outline-offset: 2px;
+            outline: none; box-shadow: var(--focus-ring);
         }
+
+        /* Disclosure "dropdowns" (Thresholds, More detail): styled to read as
+           a control rather than a bare text link, matching the select boxes. */
+        .disclosure-trigger {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            cursor: pointer; user-select: none; list-style: none;
+            font-size: 11px; font-weight: 500; color: #9aa0a6;
+            padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border-subtle);
+            transition: color .15s, border-color .15s, background-color .15s;
+        }
+        .disclosure-trigger::-webkit-details-marker { display: none; }
+        .disclosure-trigger:hover { color: #e8eaed; border-color: var(--border-hover); background: rgba(255,255,255,0.03); }
+        .disclosure-trigger:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
         input[type="range"]:disabled::-webkit-slider-thumb { background: #80868b; }
         input[type="range"]:disabled::-moz-range-thumb { background: #80868b; }
@@ -187,7 +224,7 @@
                     <option value="custom">Custom</option>
                 </select>
                 <details id="cfg-details" class="group mb-4">
-                    <summary class="flex items-center justify-between cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-[11px] font-medium text-gray-500 hover:text-gray-300 py-1.5">
+                    <summary class="disclosure-trigger">
                         <span>Thresholds</span>
                         <span class="material-symbols-rounded text-[16px] transition-transform group-open:rotate-180">expand_more</span>
                     </summary>
@@ -232,7 +269,7 @@
                     </div>
                     <button id="print-toggle" role="switch" aria-checked="false" disabled
                         title="Click a surface point first"
-                        class="relative w-[46px] h-7 rounded-full transition-colors shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#8ab4f8]" style="background:#5f6368">
+                        class="relative w-[46px] h-7 rounded-full transition-colors shrink-0" style="background:#5f6368">
                         <span id="print-toggle-thumb" class="absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow transition-transform" style="transform: translateX(0)"></span>
                     </button>
                 </div>
@@ -285,7 +322,7 @@
                     <div id="stat-verdict" class="mt-3 text-xs font-medium flex items-start gap-1.5"></div>
 
                     <details id="stats-details" class="group mt-3 pt-3 border-t border-[#3c4043]">
-                        <summary class="flex items-center justify-between cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-[11px] font-medium text-gray-500 hover:text-gray-300 py-1">
+                        <summary class="disclosure-trigger">
                             <span>More detail</span>
                             <span class="material-symbols-rounded text-[16px] transition-transform group-open:rotate-180">expand_more</span>
                         </summary>

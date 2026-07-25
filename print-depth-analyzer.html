@@ -51,6 +51,8 @@
             --border-subtle: rgba(255,255,255,0.08);
             --border-hover: rgba(255,255,255,0.18);
             --focus-ring: 0 0 0 3px rgba(138,180,248,0.28);
+            --surface-tonal: rgba(255,255,255,0.035);
+            --surface-tonal-hover: rgba(255,255,255,0.075);
         }
         body { margin: 0; overflow: hidden; background-color: #202124; color: #e8eaed; font-family: 'Roboto', sans-serif; }
         #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
@@ -148,11 +150,19 @@
         .point-chip.point-active { background: rgba(138,180,248,0.15); border-color: var(--accent); color: var(--accent); }
 
         .section-title { font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: #9aa0a6; }
-        .icon-btn { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 8px 4px; border-radius: 9999px; border: 1px solid var(--border-subtle); color: #e8eaed; background: transparent; transition: background .15s, border-color .15s; }
-        .icon-btn:hover { background: rgba(255,255,255,0.05); border-color: var(--border-hover); }
-        .icon-btn:disabled:hover { background: transparent; border-color: var(--border-subtle); }
+
+        /* Tonal buttons: a soft surface tint instead of an outline — Material 3
+           favors elevation/tone over the heavier outlined-everything M2 look. */
+        .icon-btn {
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+            font-size: 12px; font-weight: 500; padding: 8px 4px; border-radius: 9999px;
+            border: 1px solid transparent; color: #e8eaed; background: var(--surface-tonal);
+            transition: background .15s;
+        }
+        .icon-btn:hover { background: var(--surface-tonal-hover); }
+        .icon-btn:disabled:hover { background: var(--surface-tonal); }
         .icon-btn.busy .material-symbols-rounded { animation: spin 1s linear infinite; }
-        .icon-btn.active { background: rgba(138,180,248,0.15); color: var(--accent); border-color: var(--accent); }
+        .icon-btn.active { background: rgba(138,180,248,0.15); color: var(--accent); }
 
         button:disabled, .icon-btn:disabled, select:disabled, input:disabled {
             opacity: 0.35; cursor: not-allowed;
@@ -162,17 +172,18 @@
             outline: none; box-shadow: var(--focus-ring);
         }
 
-        /* Disclosure "dropdowns" (Thresholds, More detail): styled to read as
-           a control rather than a bare text link, matching the select boxes. */
+        /* Disclosure "dropdowns" (Thresholds, More detail): same tonal language
+           so they read as a control rather than a bare text link. */
         .disclosure-trigger {
             display: flex; align-items: center; justify-content: space-between; gap: 8px;
             cursor: pointer; user-select: none; list-style: none;
             font-size: 11px; font-weight: 500; color: #9aa0a6;
-            padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border-subtle);
-            transition: color .15s, border-color .15s, background-color .15s;
+            padding: 8px 12px; border-radius: 10px; border: 1px solid transparent;
+            background: var(--surface-tonal);
+            transition: color .15s, background-color .15s;
         }
         .disclosure-trigger::-webkit-details-marker { display: none; }
-        .disclosure-trigger:hover { color: #e8eaed; border-color: var(--border-hover); background: rgba(255,255,255,0.03); }
+        .disclosure-trigger:hover { color: #e8eaed; background: var(--surface-tonal-hover); }
         .disclosure-trigger:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
         input[type="range"]:disabled::-webkit-slider-thumb { background: #80868b; }

@@ -217,6 +217,13 @@
                     </button>
                 </div>
 
+                <!-- PRINTABLE PARTS (shown only for multi-part uploads) -->
+                <div id="parts-section" class="hidden mb-4">
+                    <div class="section-title mb-2">Printable Parts</div>
+                    <p class="text-[10px] text-gray-500 mb-2 leading-relaxed">Only selected parts receive ink or count toward the analysis — tap to include or exclude.</p>
+                    <div id="parts-row" class="flex flex-wrap gap-1.5"></div>
+                </div>
+
                 <!-- MACHINE PROFILE -->
                 <div class="section-title mb-2">Machine Profile</div>
                 <select id="profile-select" class="mb-2">
@@ -504,16 +511,19 @@
         const vertexShader = `
             attribute float curvature;
             attribute float kgauss;
+            attribute float partSelected;
             varying vec3 vWorldPosition;
             varying vec3 vWorldNormal;
             varying float vCurvature;
             varying float vGauss;
+            varying float vPartSelected;
             void main() {
                 vec4 worldPosition = modelMatrix * vec4(position, 1.0);
                 vWorldPosition = worldPosition.xyz;
                 vWorldNormal = normalize(mat3(modelMatrix) * normal);
                 vCurvature = curvature;
                 vGauss = kgauss;
+                vPartSelected = partSelected;
                 gl_Position = projectionMatrix * viewMatrix * worldPosition;
             }
         `;
@@ -541,6 +551,7 @@
             varying vec3 vWorldNormal;
             varying float vCurvature;
             varying float vGauss;
+            varying float vPartSelected;
 
             vec2 rot2(vec2 p, float a) {
                 float c = cos(a), s = sin(a);
@@ -574,6 +585,14 @@
 
                 if (uIsActive == 0) {
                     gl_FragColor = vec4(vec3(0.9) * lightIntensity, 1.0);
+                    return;
+                }
+
+                // Parts excluded via the Printable Parts list never receive ink or
+                // analysis coloring — plain neutral, a shade darker than "no analysis
+                // yet" so it reads as deliberately excluded rather than just inactive.
+                if (vPartSelected < 0.5) {
+                    gl_FragColor = vec4(vec3(0.75) * lightIntensity, 1.0);
                     return;
                 }
 
@@ -930,7 +949,9 @@
             mouse.x = (clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(clientY / window.innerHeight) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
-            const hits = raycaster.intersectObject(currentModel, true);
+            // Excluded parts (Printable Parts) aren't a valid click/hover target —
+            // clicks and hover pass through to whatever's behind, same as missing the model.
+            const hits = raycaster.intersectObject(currentModel, true).filter(h => isPartSelected(h.object));
             // Always resolve to genuinely outward-facing surface — skip hits on
             // backfaces (interior/folded-back geometry) so the print axis this
             // click establishes never points into the model. Falls back to the
@@ -1068,7 +1089,7 @@
 
             currentModel.updateMatrixWorld(true);
             currentModel.traverse((child) => {
-                if (!child.isMesh) return;
+                if (!child.isMesh || !isPartSelected(child)) return;
                 const pos = child.geometry.attributes.position;
                 const nor = child.geometry.attributes.normal;
                 const cur = child.geometry.attributes.curvature;
@@ -1163,7 +1184,12 @@
 
                 currentModel.updateMatrixWorld(true);
                 const meshes = [];
-                currentModel.traverse(c => { if (c.isMesh) meshes.push(c); });
+                currentModel.traverse(c => { if (c.isMesh && isPartSelected(c)) meshes.push(c); });
+
+                if (meshes.length === 0) {
+                    updateStatus('No printable parts selected — enable one in Printable Parts first.', false);
+                    return;
+                }
 
                 for (const dir of dirs) {
                     // Reference point: the extreme vertex along this direction
@@ -1534,7 +1560,59 @@
             } else if (!g.attributes.normal) {
                 g.computeVertexNormals();
             }
-            return addCurvatureAttributes(g);
+            const avgEdge = addCurvatureAttributes(g);
+            // Printable by default; toggled per-mesh via the Printable Parts list.
+            g.setAttribute('partSelected', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(1), 1));
+            return avgEdge;
+        }
+
+        // ================= Printable parts =================
+        // Multi-part uploads (e.g. separate "keyplate"/"housing" objects in an OBJ
+        // or GLTF) can restrict the print target to just some of their meshes.
+        function isPartSelected(mesh) {
+            return mesh.userData.printable !== false;
+        }
+
+        function setPartSelected(mesh, selected) {
+            mesh.userData.printable = selected;
+            const attr = mesh.geometry.attributes.partSelected;
+            if (attr) {
+                attr.array.fill(selected ? 1 : 0);
+                attr.needsUpdate = true;
+            }
+        }
+
+        function renderPartsList() {
+            const section = document.getElementById('parts-section');
+            const row = document.getElementById('parts-row');
+            row.innerHTML = '';
+
+            const meshes = [];
+            if (currentModel) currentModel.traverse(c => { if (c.isMesh) meshes.push(c); });
+
+            // A single-mesh model has nothing to choose between — keep the panel minimal.
+            if (meshes.length < 2) { section.classList.add('hidden'); return; }
+            section.classList.remove('hidden');
+
+            meshes.forEach((mesh, i) => {
+                const name = mesh.name || `Part ${i + 1}`;
+                const b = document.createElement('button');
+                const selected = isPartSelected(mesh);
+                b.className = 'point-chip' + (selected ? ' point-active' : '');
+                b.textContent = name;
+                b.setAttribute('aria-pressed', String(selected));
+                b.title = selected ? `${name} — click to exclude from printing` : `${name} — click to include in printing`;
+                b.addEventListener('click', () => {
+                    const next = !isPartSelected(mesh);
+                    setPartSelected(mesh, next);
+                    b.classList.toggle('point-active', next);
+                    b.setAttribute('aria-pressed', String(next));
+                    b.title = next ? `${name} — click to exclude from printing` : `${name} — click to include in printing`;
+                    if (analysisActive) showResults(computeDepthStats(refPoint, refNormal));
+                    updateStatus(`${name} ${next ? 'included in' : 'excluded from'} the print target.`, false);
+                });
+                row.appendChild(b);
+            });
         }
 
         // ================= Model lifecycle =================
@@ -1548,6 +1626,7 @@
         function removeModel() {
             if (!currentModel) { updateStatus('No model to remove.', false); return; }
             disposeCurrentModel();
+            renderPartsList();
             resetAnalysisState();
             savedPoints = []; activePointIdx = -1; renderPointChips();
             updateStatus('Model removed. Upload a new model or click "Default".', false);
@@ -1587,6 +1666,7 @@
             meshAvgEdge = meshCount > 0 ? edgeAcc / meshCount : 0;
 
             scene.add(currentModel);
+            renderPartsList();
             resetAnalysisState();
 
             const box = new THREE.Box3().setFromObject(currentModel);
@@ -1722,7 +1802,7 @@
 
             currentModel.updateMatrixWorld(true);
             currentModel.traverse((child) => {
-                if (!child.isMesh) return;
+                if (!child.isMesh || !isPartSelected(child)) return;
                 const g = child.geometry;
                 const pos = g.attributes.position;
                 const idx = g.index;

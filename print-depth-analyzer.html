@@ -578,6 +578,7 @@
                 }
 
                 float depth = dot(uRefPoint - vWorldPosition, uRefNormal);
+                if (abs(depth) < 0.005) depth = 0.0; // float noise right at the reference point shouldn't dip into the "behind" zone
                 float facing = dot(N, uRefNormal); // cos(theta) vs. print axis
                 bool back = facing < -0.1;
                 bool overK = vCurvature >= uMaxCurvature;
@@ -1354,7 +1355,8 @@
             const cosT = hn.dot(refNormal);
             if (cosT < -0.1) { hideDepthChip(); return; }
 
-            const depth = new THREE.Vector3().subVectors(refPoint, hit.point).dot(refNormal);
+            let depth = new THREE.Vector3().subVectors(refPoint, hit.point).dot(refNormal);
+            if (Math.abs(depth) < 0.005) depth = 0; // float noise right at the reference point shouldn't read as "-0.00" or the "behind" zone
             const theta = Math.acos(Math.min(Math.max(cosT, 0), 1)) * 180 / Math.PI;
             const errUm = Math.max(depth, 0) * DOT_ERR_UM_PER_MM;
 

@@ -976,7 +976,6 @@
             helperGroup.visible = !printPreviewOn;
             const stats = computeDepthStats(refPoint, refNormal);
             showResults(stats);
-            updateFlowerScale(stats);
             updateActionAvailability();
             updateStatus(`Analysis complete. Center: [${refPoint.x.toFixed(1)}, ${refPoint.y.toFixed(1)}, ${refPoint.z.toFixed(1)}]`, false);
         }
@@ -1103,8 +1102,9 @@
         }
 
         // Seeds the Width slider (shared by uploaded artwork and the demo flowers) from
-        // the measured safe-zone extent, so a fresh analysis point starts filled to the
-        // boundary. The user can still drag the slider afterward to override it.
+        // the measured safe-zone extent. Only called when a new image is uploaded —
+        // clicking a new analysis point deliberately leaves Width/Rotation alone so
+        // they don't keep getting reset out from under the user.
         function updateFlowerScale(stats) {
             const diameter = Math.min(Math.max(Math.round(stats.printRadius * 2), ART_SIZE_MIN), ART_SIZE_MAX);
             document.getElementById('art-size').value = diameter;

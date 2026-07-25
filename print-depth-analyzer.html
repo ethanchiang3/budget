@@ -122,6 +122,18 @@
         }
         select::-ms-expand { display: none; }
 
+        input[type="color"] {
+            -webkit-appearance: none; appearance: none;
+            width: 36px; height: 36px; padding: 0; border: 1px solid var(--border-subtle);
+            border-radius: 9999px; cursor: pointer; background: none;
+            transition: border-color .15s, box-shadow .15s;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 3px; border-radius: 9999px; }
+        input[type="color"]::-webkit-color-swatch { border: none; border-radius: 9999px; }
+        input[type="color"]::-moz-color-swatch { border: none; border-radius: 9999px; }
+        input[type="color"]:hover { border-color: var(--border-hover); }
+        input[type="color"]:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
         .seg-btn { flex: 1; font-size: 11px; font-weight: 500; padding: 6px 0; border: 1px solid var(--border-subtle); color: #9aa0a6; background: transparent; transition: all .15s; }
         .seg-btn:first-child { border-radius: 9999px 0 0 9999px; }
         .seg-btn:last-child { border-radius: 0 9999px 9999px 0; border-left: none; }
@@ -215,6 +227,20 @@
                     <button id="default-model-btn" class="icon-btn" title="Load the sample surface">
                         <span class="material-symbols-rounded text-[16px]">deployed_code</span>Default
                     </button>
+                </div>
+
+                <!-- MODEL COLOR -->
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <div class="section-title">Model Color</div>
+                        <div class="text-[10px] text-gray-500 mt-0.5">Shown wherever there's no ink</div>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <button id="eyedropper-btn" class="icon-btn hidden !w-9 !h-9 !p-0" title="Pick a color from anywhere on screen" aria-label="Eyedropper: pick a color from the screen">
+                            <span class="material-symbols-rounded text-[18px]">colorize</span>
+                        </button>
+                        <input type="color" id="model-color-input" value="#e6e6e6" title="Model base color" aria-label="Model base color">
+                    </div>
                 </div>
 
                 <!-- PRINTABLE PARTS (shown only for multi-part uploads) -->
@@ -546,6 +572,7 @@
             uniform vec2 uArtSize;      // artwork (or demo flower cluster) w,h in mm; drives scale for both
             uniform float uArtRot;
             uniform vec2 uArtOffset;    // mm pan within the fixed print pose, set by the Reposition drag tool
+            uniform vec3 uModelColor;   // base body color, shown wherever there's no ink
 
             varying vec3 vWorldPosition;
             varying vec3 vWorldNormal;
@@ -584,15 +611,15 @@
                 float lightIntensity = 0.55 + max(dot(shadeN, lightDir), 0.0) * 0.45;
 
                 if (uIsActive == 0) {
-                    gl_FragColor = vec4(vec3(0.9) * lightIntensity, 1.0);
+                    gl_FragColor = vec4(uModelColor * lightIntensity, 1.0);
                     return;
                 }
 
                 // Parts excluded via the Printable Parts list never receive ink or
-                // analysis coloring — plain neutral, a shade darker than "no analysis
-                // yet" so it reads as deliberately excluded rather than just inactive.
+                // analysis coloring — the model color, a shade darker so it reads as
+                // deliberately excluded rather than just inactive.
                 if (vPartSelected < 0.5) {
-                    gl_FragColor = vec4(vec3(0.75) * lightIntensity, 1.0);
+                    gl_FragColor = vec4(uModelColor * 0.83 * lightIntensity, 1.0);
                     return;
                 }
 
@@ -609,7 +636,7 @@
 
                 // ---- Print preview: simulate finished product ----
                 if (uShowPrint == 1) {
-                    vec3 col = back ? vec3(0.35) : vec3(0.94);
+                    vec3 col = back ? uModelColor * 0.37 : uModelColor;
 
                     if (!back && !overK && printDepth <= uZ.z) {
                         // Continuous quality falloff: sharp in optimal zone,
@@ -760,7 +787,8 @@
                     uArtTex:   { value: dummyTex },
                     uArtSize:  { value: new THREE.Vector2(40, 40) },
                     uArtRot:   { value: 0 },
-                    uArtOffset: { value: new THREE.Vector2(0, 0) }
+                    uArtOffset: { value: new THREE.Vector2(0, 0) },
+                    uModelColor: { value: new THREE.Color(0xe6e6e6) }
                 },
                 side: THREE.DoubleSide,
                 extensions: { derivatives: true }
@@ -788,6 +816,10 @@
             document.getElementById('art-size').addEventListener('input', onArtParamChange);
             document.getElementById('art-rot').addEventListener('input', onArtParamChange);
             document.getElementById('status-bar').addEventListener('click', dismissStatus);
+            document.getElementById('model-color-input').addEventListener('input', onModelColorChange);
+            const eyedropperBtn = document.getElementById('eyedropper-btn');
+            if (window.EyeDropper) eyedropperBtn.classList.remove('hidden'); // Chrome/Edge only — no fallback needed, the swatch still opens the OS picker
+            eyedropperBtn.addEventListener('click', onEyedropperClick);
             document.getElementById('resources-btn').addEventListener('click', openResources);
             document.getElementById('resources-close-btn').addEventListener('click', closeResources);
             document.getElementById('resources-overlay').addEventListener('click', (e) => {
@@ -1613,6 +1645,23 @@
                 });
                 row.appendChild(b);
             });
+        }
+
+        // ================= Model color =================
+        function onModelColorChange() {
+            const hex = document.getElementById('model-color-input').value;
+            customShaderMaterial.uniforms.uModelColor.value.set(hex);
+        }
+
+        async function onEyedropperClick() {
+            if (!window.EyeDropper) return;
+            try {
+                const result = await new EyeDropper().open();
+                document.getElementById('model-color-input').value = result.sRGBHex;
+                onModelColorChange();
+            } catch (err) {
+                // User cancelled (Escape or click-away) — nothing to do.
+            }
         }
 
         // ================= Model lifecycle =================

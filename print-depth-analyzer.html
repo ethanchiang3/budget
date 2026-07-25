@@ -261,30 +261,6 @@
                     <div id="parts-row" class="flex flex-wrap gap-1.5"></div>
                 </div>
 
-                <!-- MACHINE PROFILE -->
-                <div class="section-title mb-2">Machine Profile</div>
-                <select id="profile-select" class="mb-2">
-                    <option value="standard" selected>Standard DOD (throw ≤ 5mm)</option>
-                    <option value="highthrow">High-Throw Head (throw ≤ 10mm)</option>
-                    <option value="custom">Custom</option>
-                </select>
-                <details id="cfg-details" class="group mb-4">
-                    <summary class="disclosure-trigger">
-                        <span>Thresholds</span>
-                        <span class="material-symbols-rounded text-[16px] transition-transform group-open:rotate-180">expand_more</span>
-                    </summary>
-                    <div class="grid grid-cols-3 gap-2 mb-1 mt-2">
-                        <div><div class="text-[10px] text-gray-500 mb-0.5">Optimal ≤ mm</div><input type="number" id="cfg-z1" step="0.5" min="0.1" aria-label="Optimal depth threshold in millimeters"></div>
-                        <div><div class="text-[10px] text-gray-500 mb-0.5">Safe ≤ mm</div><input type="number" id="cfg-z2" step="0.5" min="0.1" aria-label="Safe depth threshold in millimeters"></div>
-                        <div><div class="text-[10px] text-gray-500 mb-0.5">Marginal ≤ mm</div><input type="number" id="cfg-z3" step="0.5" min="0.1" aria-label="Marginal depth threshold in millimeters"></div>
-                    </div>
-                    <div class="grid grid-cols-3 gap-2">
-                        <div><div class="text-[10px] text-gray-500 mb-0.5">Limit ≤ mm</div><input type="number" id="cfg-z4" step="0.5" min="0.1" aria-label="Depth limit threshold in millimeters"></div>
-                        <div><div class="text-[10px] text-gray-500 mb-0.5">Max κ mm⁻¹</div><input type="number" id="cfg-kappa" step="0.005" min="0.005" aria-label="Maximum curvature kappa in inverse millimeters"></div>
-                        <div><div class="text-[10px] text-gray-500 mb-0.5">Max θ deg</div><input type="number" id="cfg-angle" step="5" min="5" max="85" aria-label="Maximum incidence angle theta in degrees"></div>
-                    </div>
-                </details>
-
                 <!-- ANALYSIS -->
                 <div class="section-title mb-2">Analysis</div>
                 <div class="flex mb-2" role="group" aria-label="View mode">
@@ -515,19 +491,16 @@
             if (window.__appReady) updateStatus("System error: " + e.message, false);
         });
 
-        // ================= Machine profiles =================
-        // Grounded in DTS literature: DOD drops hold accuracy for ~3-4mm of
-        // flight; >5mm jetting distance is the accepted quality failure point.
-        // See: "Drop placement accuracy testing of robot-guided inkjet
-        // printing onto 3D objects", Machines (MDPI) 2023 — doi.org/10.3390/machines11050568
-        const PROFILES = {
-            standard:  { z: [1.5, 3.0, 4.0, 5.0],  kappa: 0.086, angle: 45 },
-            highthrow: { z: [3.0, 6.0, 8.0, 10.0], kappa: 0.086, angle: 50 }
-        };
+        // ================= Machine profile =================
+        // Standard DOD (throw ≤ 5mm). Grounded in DTS literature: DOD drops hold
+        // accuracy for ~3-4mm of flight; >5mm jetting distance is the accepted
+        // quality failure point. See: "Drop placement accuracy testing of
+        // robot-guided inkjet printing onto 3D objects", Machines (MDPI) 2023 —
+        // doi.org/10.3390/machines11050568
         const DOT_ERR_UM_PER_MM = 20; // est. landing error growth with throw distance (see reference above)
         const ART_SIZE_MIN = 10, ART_SIZE_MAX = 200; // mm, matches the Width slider's range
 
-        let cfg = { z: [...PROFILES.standard.z], kappa: PROFILES.standard.kappa, angle: PROFILES.standard.angle };
+        const cfg = { z: [1.5, 3.0, 4.0, 5.0], kappa: 0.086, angle: 45 };
 
         let scene, camera, renderer, controls;
         let currentModel = null;
@@ -820,7 +793,6 @@
             document.getElementById('axis-view-btn').addEventListener('click', lookAlongPrintAxis);
             document.getElementById('snapshot-btn').addEventListener('click', exportSnapshot);
             document.getElementById('dxf-btn').addEventListener('click', exportBoundaryDXF);
-            document.getElementById('profile-select').addEventListener('change', onProfileSelect);
             document.getElementById('art-input').addEventListener('change', handleArtworkUpload);
             document.getElementById('art-clear-btn').addEventListener('click', clearArtwork);
             document.getElementById('art-size').addEventListener('input', onArtParamChange);
@@ -839,51 +811,14 @@
                 if (e.key === 'Escape') closeResources();
             });
             document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', onViewModeClick));
-            ['cfg-z1','cfg-z2','cfg-z3','cfg-z4','cfg-kappa','cfg-angle'].forEach(id => {
-                document.getElementById(id).addEventListener('change', onCfgInputChange);
-            });
 
-            fillCfgInputs();
             applyCfg();
             loadDefaultModel();
             animate();
             window.__appReady = true;
         }
 
-        // ================= Machine profile =================
-        function fillCfgInputs() {
-            document.getElementById('cfg-z1').value = cfg.z[0];
-            document.getElementById('cfg-z2').value = cfg.z[1];
-            document.getElementById('cfg-z3').value = cfg.z[2];
-            document.getElementById('cfg-z4').value = cfg.z[3];
-            document.getElementById('cfg-kappa').value = cfg.kappa;
-            document.getElementById('cfg-angle').value = cfg.angle;
-        }
-
-        function onProfileSelect(e) {
-            const p = PROFILES[e.target.value];
-            if (p) {
-                cfg = { z: [...p.z], kappa: p.kappa, angle: p.angle };
-                fillCfgInputs();
-                applyCfg();
-            } else {
-                document.getElementById('cfg-details').open = true;
-            }
-        }
-
-        function onCfgInputChange() {
-            const v = id => parseFloat(document.getElementById(id).value);
-            let z = [v('cfg-z1'), v('cfg-z2'), v('cfg-z3'), v('cfg-z4')];
-            // Enforce monotonic zones
-            for (let i = 1; i < 4; i++) if (!(z[i] > z[i-1])) z[i] = z[i-1] + 0.5;
-            cfg.z = z;
-            cfg.kappa = Math.max(v('cfg-kappa') || 0.086, 0.001);
-            cfg.angle = Math.min(Math.max(v('cfg-angle') || 45, 5), 85);
-            fillCfgInputs();
-            document.getElementById('profile-select').value = 'custom';
-            applyCfg();
-        }
-
+        // Fixed to the standard profile — no UI to switch or customize it.
         function applyCfg() {
             const u = customShaderMaterial.uniforms;
             u.uZ.value.set(cfg.z[0], cfg.z[1], cfg.z[2], cfg.z[3]);

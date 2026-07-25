@@ -140,6 +140,7 @@
         .icon-btn:hover { background: rgba(255,255,255,0.05); border-color: var(--border-hover); }
         .icon-btn:disabled:hover { background: transparent; border-color: var(--border-subtle); }
         .icon-btn.busy .material-symbols-rounded { animation: spin 1s linear infinite; }
+        .icon-btn.active { background: rgba(138,180,248,0.15); color: var(--accent); border-color: var(--accent); }
 
         button:disabled, .icon-btn:disabled, select:disabled, input:disabled {
             opacity: 0.35; cursor: not-allowed;
@@ -283,14 +284,18 @@
                         <span class="material-symbols-rounded text-[16px]">close</span>
                     </button>
                 </div>
+                <button id="art-move-btn" class="icon-btn w-full mb-2" disabled aria-pressed="false" title="Click a surface point first">
+                    <span class="material-symbols-rounded text-[16px]">open_with</span>
+                    <span>Reposition on Surface</span>
+                </button>
                 <div class="grid grid-cols-2 gap-3 mb-4">
                     <div>
                         <div class="flex justify-between text-[10px] text-gray-500 mb-1"><span>Width</span><span id="art-size-val">40 mm</span></div>
-                        <input type="range" id="art-size" min="10" max="120" step="2" value="40" disabled title="Upload artwork to enable">
+                        <input type="range" id="art-size" min="10" max="200" step="2" value="40" disabled title="Click a surface point first">
                     </div>
                     <div>
                         <div class="flex justify-between text-[10px] text-gray-500 mb-1"><span>Rotation</span><span id="art-rot-val">0°</span></div>
-                        <input type="range" id="art-rot" min="0" max="360" step="5" value="0" disabled title="Upload artwork to enable">
+                        <input type="range" id="art-rot" min="0" max="360" step="5" value="0" disabled title="Click a surface point first">
                     </div>
                 </div>
 
@@ -477,7 +482,7 @@
             highthrow: { z: [3.0, 6.0, 8.0, 10.0], kappa: 0.086, angle: 50 }
         };
         const DOT_ERR_UM_PER_MM = 20; // est. landing error growth with throw distance (see reference above)
-        const BASE_FLOWER_RADIUS = 15; // mm radius the demo flower cluster was composed at (uFlowerScale == 1)
+        const ART_SIZE_MIN = 10, ART_SIZE_MAX = 200; // mm, matches the Width slider's range
 
         let cfg = { z: [...PROFILES.standard.z], kappa: PROFILES.standard.kappa, angle: PROFILES.standard.angle };
 
@@ -528,9 +533,9 @@
             uniform float uMaxAngleCos;
             uniform vec4 uZ;            // optimal / safe / marginal / limit
             uniform sampler2D uArtTex;
-            uniform vec2 uArtSize;      // artwork w,h in mm
+            uniform vec2 uArtSize;      // artwork (or demo flower cluster) w,h in mm; drives scale for both
             uniform float uArtRot;
-            uniform float uFlowerScale; // demo flowers: 1.0 = designed size, grows/shrinks to fill the safe-zone boundary
+            uniform vec2 uArtOffset;    // mm pan within the fixed print pose, set by the Reposition drag tool
 
             varying vec3 vWorldPosition;
             varying vec3 vWorldNormal;
@@ -595,7 +600,10 @@
 
                         if (q > 0.002) {
                             vec3 rel = vWorldPosition - uRefPoint;
-                            vec2 uv = vec2(dot(rel, uTangent), dot(rel, uBitangent));
+                            // uArtOffset pans the pattern within the fixed print pose established
+                            // at the click — the pose (and this quality falloff) stays put; only
+                            // which part of the surface shows which part of the pattern moves.
+                            vec2 uv = vec2(dot(rel, uTangent), dot(rel, uBitangent)) - uArtOffset;
                             if (uUseArt == 1) {
                                 vec2 auv = rot2(uv, -uArtRot) / uArtSize + 0.5;
                                 if (auv.x >= 0.0 && auv.x <= 1.0 && auv.y >= 0.0 && auv.y <= 1.0) {
@@ -603,11 +611,13 @@
                                     col = mix(col, tex.rgb, tex.a * q);
                                 }
                             } else {
-                                // Composition was designed at uFlowerScale == 1; dividing the
-                                // sample point shrinks/grows the whole cluster (positions and
-                                // petal radii together) to match the measured safe-zone extent.
-                                // fwidth-based edges below stay crisp regardless of the scale.
-                                vec2 fuv = uv / max(uFlowerScale, 0.05);
+                                // Demo flowers were composed at a 30mm-diameter footprint;
+                                // uArtSize.x (the same Width slider used for uploaded artwork)
+                                // scales the whole cluster to match. fwidth-based edges in
+                                // drawFlower stay crisp regardless of the scale.
+                                const float BASE_FLOWER_DIAM = 30.0;
+                                float flowerScale = max(uArtSize.x / BASE_FLOWER_DIAM, 0.05);
+                                vec2 fuv = rot2(uv, -uArtRot) / flowerScale;
                                 drawFlower(fuv - vec2( 0.0,  3.5), 7.5, 5.0, 0.0, vec3(0.91, 0.36, 0.47), q, col);
                                 drawFlower(fuv - vec2(-9.5, -4.5), 5.5, 6.0, 0.5, vec3(0.95, 0.56, 0.19), q, col);
                                 drawFlower(fuv - vec2( 9.0, -5.5), 4.8, 8.0, 1.0, vec3(0.42, 0.48, 0.89), q, col);
@@ -724,7 +734,7 @@
                     uArtTex:   { value: dummyTex },
                     uArtSize:  { value: new THREE.Vector2(40, 40) },
                     uArtRot:   { value: 0 },
-                    uFlowerScale: { value: 1.0 }
+                    uArtOffset: { value: new THREE.Vector2(0, 0) }
                 },
                 side: THREE.DoubleSide,
                 extensions: { derivatives: true }
@@ -741,6 +751,7 @@
             document.getElementById('reset-fab').addEventListener('click', resetView);
             document.getElementById('contour-slider').addEventListener('input', onContourChange);
             document.getElementById('print-toggle').addEventListener('click', onPrintToggle);
+            document.getElementById('art-move-btn').addEventListener('click', onArtMoveToggle);
             document.getElementById('auto-spot-btn').addEventListener('click', autoFindBestSpot);
             document.getElementById('axis-view-btn').addEventListener('click', lookAlongPrintAxis);
             document.getElementById('snapshot-btn').addEventListener('click', exportSnapshot);
@@ -822,11 +833,10 @@
             document.getElementById('lg-kappa').innerHTML = `κ &ge; ${cfg.kappa} mm⁻¹ <span class="text-xs text-gray-500 ml-1">(R &lt; ${R}mm)</span>`;
             document.getElementById('lg-angle').innerHTML = `θ &gt; ${cfg.angle}° <span class="text-xs text-gray-500 ml-1">(Steep slope)</span>`;
 
-            if (analysisActive) {
-                const stats = computeDepthStats(refPoint, refNormal);
-                showResults(stats);
-                updateFlowerScale(stats);
-            }
+            // Recompute results for the current pose, but don't re-seed the Width
+            // slider here — a threshold tweak shouldn't silently override a size
+            // the user (or an uploaded image) already has set.
+            if (analysisActive) showResults(computeDepthStats(refPoint, refNormal));
         }
 
         // ================= View modes =================
@@ -860,12 +870,31 @@
         let pointerDownTime = 0;
         let pointerDownPos = new THREE.Vector2();
 
+        // Reposition mode: drag on the surface to pan the print (art or demo
+        // flowers) within the fixed pose instead of orbiting the camera.
+        let artDragMode = false;
+        let artDragActive = false;
+        let artDragLastUV = null;
+        const artNM = new THREE.Matrix3();
+        const dragPlane = new THREE.Plane();
+        const dragPoint = new THREE.Vector3();
+
         function onPointerDown(event) {
             pointerDownTime = Date.now();
             pointerDownPos.set(event.clientX, event.clientY);
+
+            if (artDragMode && analysisActive) {
+                artDragLastUV = planeUV(event.clientX, event.clientY);
+                artDragActive = !!artDragLastUV;
+            }
+
             window.addEventListener('pointerup', onPointerUp, { once: true });
         }
         function onPointerUp(event) {
+            artDragActive = false;
+            artDragLastUV = null;
+            if (artDragMode) return; // dragging repositions the print, not a new analysis point
+
             const dt = Date.now() - pointerDownTime;
             const dist = pointerDownPos.distanceTo(new THREE.Vector2(event.clientX, event.clientY));
             if (dt < 300 && dist < 5) {
@@ -874,12 +903,37 @@
             }
         }
 
+        // Tangent-plane (mm) coordinates of where the pointer ray crosses the fixed
+        // print plane (through refPoint, along refNormal) — not a mesh raycast, so
+        // dragging keeps tracking smoothly even if the cursor drifts off the model's
+        // silhouette mid-drag. Same basis the shader uses for uv.
+        function planeUV(clientX, clientY) {
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            dragPlane.setFromNormalAndCoplanarPoint(refNormal, refPoint);
+            if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return null;
+            const rel = dragPoint.clone().sub(refPoint);
+            const u = customShaderMaterial.uniforms;
+            return new THREE.Vector2(rel.dot(u.uTangent.value), rel.dot(u.uBitangent.value));
+        }
+
         function raycastModel(clientX, clientY) {
             if (!currentModel) return null;
             mouse.x = (clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(clientY / window.innerHeight) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
             const hits = raycaster.intersectObject(currentModel, true);
+            // Always resolve to genuinely outward-facing surface — skip hits on
+            // backfaces (interior/folded-back geometry) so the print axis this
+            // click establishes never points into the model. Falls back to the
+            // nearest hit if the whole ray never finds a front-facing triangle.
+            for (const hit of hits) {
+                if (!hit.face) continue;
+                artNM.getNormalMatrix(hit.object.matrixWorld);
+                const n = hit.face.normal.clone().applyMatrix3(artNM).normalize();
+                if (n.dot(raycaster.ray.direction) < 0) return hit;
+            }
             return hits.length > 0 ? hits[0] : null;
         }
 
@@ -902,6 +956,7 @@
             u.uRefNormal.value.copy(refNormal);
             u.uTangent.value.copy(tangent);
             u.uBitangent.value.copy(bitangent);
+            u.uArtOffset.value.set(0, 0); // new pose — any prior reposition pan no longer applies
             u.uIsActive.value = 1;
             analysisActive = true;
 
@@ -939,7 +994,7 @@
         }
 
         // ================= Action availability =================
-        // Keeps buttons that need a loaded model / an active analysis point /
+        // Keeps buttons that need a loaded model, an active analysis point, or
         // uploaded artwork visibly disabled instead of silently no-op'ing.
         function updateActionAvailability() {
             const hasModel = !!currentModel;
@@ -965,12 +1020,18 @@
             const clearBtn = document.getElementById('art-clear-btn');
             clearBtn.disabled = !hasArt;
 
+            // Width/Rotation scale and turn whatever pattern is showing — the demo
+            // flowers or an uploaded image — so both only need an active print pose.
             const sizeInput = document.getElementById('art-size');
             const rotInput = document.getElementById('art-rot');
-            sizeInput.disabled = !hasArt;
-            rotInput.disabled = !hasArt;
-            sizeInput.title = hasArt ? '' : 'Upload artwork to enable';
-            rotInput.title = hasArt ? '' : 'Upload artwork to enable';
+            sizeInput.disabled = !analysisActive;
+            rotInput.disabled = !analysisActive;
+            sizeInput.title = analysisActive ? '' : 'Click a surface point first';
+            rotInput.title = analysisActive ? '' : 'Click a surface point first';
+
+            const moveBtn = document.getElementById('art-move-btn');
+            moveBtn.disabled = !analysisActive;
+            moveBtn.title = analysisActive ? 'Drag on the surface to reposition the print' : 'Click a surface point first';
         }
 
         // ================= Stats =================
@@ -993,7 +1054,7 @@
             const gMax = cfg.kappa * cfg.kappa;
 
             // Tangent/bitangent basis matching applyAnalysis(), used to measure how
-            // far the safe zone extends around the reference point (see uFlowerScale).
+            // far the safe zone extends around the reference point (see updateFlowerScale).
             const up = Math.abs(normal.y) < 0.99 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
             const tangent = new THREE.Vector3().crossVectors(up, normal).normalize();
             const bitangent = new THREE.Vector3().crossVectors(normal, tangent);
@@ -1034,12 +1095,13 @@
             return { maxDepth, overPercent: pct(over), curvPercent: pct(curvC), angPercent: pct(angC), gaussPercent: pct(gaussC), printRadius };
         }
 
-        // Scales the demo flower cluster (drawFlower calls in the shader) so it fills
-        // the measured safe-zone extent instead of staying a fixed size regardless of
-        // how big or small the printable area actually is.
+        // Seeds the Width slider (shared by uploaded artwork and the demo flowers) from
+        // the measured safe-zone extent, so a fresh analysis point starts filled to the
+        // boundary. The user can still drag the slider afterward to override it.
         function updateFlowerScale(stats) {
-            const r = Math.min(Math.max(stats.printRadius, 6), 150);
-            customShaderMaterial.uniforms.uFlowerScale.value = r / BASE_FLOWER_RADIUS;
+            const diameter = Math.min(Math.max(Math.round(stats.printRadius * 2), ART_SIZE_MIN), ART_SIZE_MAX);
+            document.getElementById('art-size').value = diameter;
+            onArtParamChange();
         }
 
         function showResults(s) {
@@ -1174,14 +1236,35 @@
             document.getElementById('print-toggle-thumb').style.transform = on ? 'translateX(18px)' : 'translateX(0)';
             toggle.setAttribute('aria-checked', String(on));
             toggle.style.background = on ? '#8ab4f8' : '#5f6368';
+            if (!on) setArtDragMode(false); // nothing to see/drag once the preview is off
         }
 
         function onPrintToggle() {
             if (!analysisActive) { updateStatus('Click a point on the model surface first, then enable print preview.', false); return; }
             setPrintPreview(!printPreviewOn);
             updateStatus(printPreviewOn
-                ? 'Print preview on: ink quality fades with depth and slope; blue line marks the safe-zone boundary.'
+                ? 'Print preview on: ink quality fades with depth and slope; blue line marks the safe-zone boundary. Use Reposition to move it, or Width/Rotation to resize.'
                 : 'Back to analysis view.', false);
+        }
+
+        // Reposition mode: while on, dragging on the surface pans the print (see
+        // onPointerDown/onPointerMove) instead of orbiting the camera.
+        function setArtDragMode(on) {
+            if (on === artDragMode) return;
+            artDragMode = on;
+            controls.enabled = !on;
+            if (!on) { artDragActive = false; artDragLastUV = null; }
+            const btn = document.getElementById('art-move-btn');
+            btn.classList.toggle('active', on);
+            btn.setAttribute('aria-pressed', String(on));
+        }
+
+        function onArtMoveToggle() {
+            if (!analysisActive) { updateStatus('Click a surface point first.', false); return; }
+            setArtDragMode(!artDragMode);
+            updateStatus(artDragMode
+                ? 'Reposition mode: drag on the surface to move the print. Toggle off to orbit again.'
+                : 'Back to normal view — orbit and click to analyze.', false);
         }
 
         function handleArtworkUpload(event) {
@@ -1196,7 +1279,11 @@
                 artTexture.needsUpdate = true;
                 customShaderMaterial.uniforms.uArtTex.value = artTexture;
                 customShaderMaterial.uniforms.uUseArt.value = 1;
-                onArtParamChange();
+                if (analysisActive) {
+                    updateFlowerScale(computeDepthStats(refPoint, refNormal)); // fit the new image to the boundary
+                } else {
+                    onArtParamChange(); // no pose yet — apply the current slider value/aspect as-is
+                }
                 document.getElementById('art-label').textContent = file.name.length > 18 ? file.name.slice(0, 16) + '…' : file.name;
                 updateActionAvailability();
                 updateStatus(analysisActive
@@ -1234,6 +1321,16 @@
         let lastHoverEvent = null;
 
         function onPointerMove(event) {
+            if (artDragActive) {
+                const uv = planeUV(event.clientX, event.clientY);
+                if (uv) {
+                    const off = customShaderMaterial.uniforms.uArtOffset.value;
+                    off.x += uv.x - artDragLastUV.x;
+                    off.y += uv.y - artDragLastUV.y;
+                    artDragLastUV = uv;
+                }
+                return;
+            }
             if (!analysisActive) return;
             lastHoverEvent = event;
             if (hoverPending) return;

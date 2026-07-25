@@ -357,7 +357,6 @@
                             <div class="text-base font-medium text-gray-100"><span id="stat-over">--</span> <span class="text-[10px] font-normal text-gray-500">%</span></div>
                         </div>
                     </div>
-                    <div id="stat-verdict" class="mt-3 text-xs font-medium flex items-start gap-1.5"></div>
 
                     <details id="stats-details" class="group mt-3 pt-3 border-t border-[#3c4043]">
                         <summary class="disclosure-trigger">
@@ -1178,19 +1177,6 @@
             mi.style.color = meshAvgEdge > 1.5 ? '#fdd663' : '';
             mi.title = meshAvgEdge > 1.5 ? 'Coarse mesh: curvature may be underestimated. Re-export with max edge length ≤ 1mm.' : '';
 
-            const verdict = document.getElementById('stat-verdict');
-            const issues = [];
-            if (s.maxDepth > cfg.z[3]) issues.push(`depth exceeds the ${cfg.z[3]}mm limit`);
-            if (s.curvPercent > 0) issues.push(`curvature exceeds ${cfg.kappa} mm⁻¹`);
-            if (s.angPercent > 0) issues.push(`slopes exceed θ ${cfg.angle}°`);
-            if (issues.length === 0) {
-                verdict.className = 'mt-3 text-xs font-medium flex items-start gap-1.5 text-[#81c995]';
-                verdict.innerHTML = '<span class="material-symbols-rounded text-base">check_circle</span><span>All criteria within printable limits at this pose</span>';
-            } else {
-                verdict.className = 'mt-3 text-xs font-medium flex items-start gap-1.5 text-[#f28b82]';
-                verdict.innerHTML = '<span class="material-symbols-rounded text-base">error</span><span>' +
-                    (issues.join('; ').charAt(0).toUpperCase() + issues.join('; ').slice(1)) + '</span>';
-            }
             document.getElementById('results-panel').classList.add('active');
         }
 

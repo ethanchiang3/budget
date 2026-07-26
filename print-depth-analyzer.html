@@ -115,12 +115,13 @@
            the arrow reads consistently instead of each browser/OS's own glyph. */
         select {
             appearance: none; -webkit-appearance: none; -moz-appearance: none;
-            font-size: 13px; font-weight: 500; padding: 9px 32px 9px 12px;
+            font-size: 13px; font-weight: 500; padding: 9px 26px 9px 12px;
+            text-align: center; text-align-last: center;
             cursor: pointer;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa0a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
-            background-position: right 10px center;
-            background-size: 16px;
+            background-position: right 8px center;
+            background-size: 14px;
         }
         select::-ms-expand { display: none; }
 
@@ -375,24 +376,6 @@
                     </div>
                 </details>
 
-                <!-- EXPORT -->
-                <details class="group mb-3">
-                    <summary class="section-trigger">
-                        <span class="flex items-center gap-2">
-                            <span class="material-symbols-rounded text-gray-500 text-[18px]">ios_share</span>
-                            <span class="section-title">Export</span>
-                        </span>
-                        <span class="material-symbols-rounded text-gray-500 text-[18px] transition-transform group-open:rotate-180">expand_more</span>
-                    </summary>
-                    <div class="pt-3 grid grid-cols-2 gap-2">
-                        <button id="snapshot-btn" class="icon-btn" title="Save the current view as a PNG">
-                            <span class="material-symbols-rounded text-[16px]">photo_camera</span>Snapshot
-                        </button>
-                        <button id="dxf-btn" class="icon-btn" disabled title="Click a surface point first">
-                            <span class="material-symbols-rounded text-[16px]">polyline</span>Boundary DXF
-                        </button>
-                    </div>
-                </details>
 
                 <!-- RESULTS -->
                 <div id="results-panel" class="mt-4 pt-4 border-t border-[#3c4043]">
@@ -865,8 +848,6 @@
             document.getElementById('art-move-btn').addEventListener('click', onArtMoveToggle);
             document.getElementById('auto-spot-btn').addEventListener('click', autoFindBestSpot);
             document.getElementById('axis-view-btn').addEventListener('click', lookAlongPrintAxis);
-            document.getElementById('snapshot-btn').addEventListener('click', exportSnapshot);
-            document.getElementById('dxf-btn').addEventListener('click', exportBoundaryDXF);
             document.getElementById('art-input').addEventListener('change', handleArtworkUpload);
             document.getElementById('art-clear-btn').addEventListener('click', clearArtwork);
             document.getElementById('art-size').addEventListener('input', onArtParamChange);
@@ -1092,16 +1073,11 @@
 
             document.getElementById('remove-model-btn').disabled = !hasModel;
             document.getElementById('auto-spot-btn').disabled = !hasModel;
-            document.getElementById('snapshot-btn').disabled = !hasModel;
             document.getElementById('reset-fab').disabled = !hasModel;
 
             const axisBtn = document.getElementById('axis-view-btn');
             axisBtn.disabled = !analysisActive;
             axisBtn.title = analysisActive ? 'View along the print axis' : 'Click a surface point first';
-
-            const dxfBtn = document.getElementById('dxf-btn');
-            dxfBtn.disabled = !analysisActive;
-            dxfBtn.title = analysisActive ? 'Export the safe-zone boundary as a DXF' : 'Click a surface point first';
 
             const printToggle = document.getElementById('print-toggle');
             printToggle.disabled = !analysisActive;
@@ -1847,69 +1823,6 @@
             camera.position.set(maxDim * 0.8, maxDim * 0.8, maxDim * 0.8);
             controls.target.set(0, 0, 0);
             updateStatus('View and analysis points reset.', false);
-        }
-
-        // ================= Exports =================
-        function exportSnapshot() {
-            renderer.render(scene, camera);
-            const url = renderer.domElement.toDataURL('image/png');
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'print-analysis.png';
-            a.click();
-            updateStatus('Snapshot saved as print-analysis.png.', false);
-        }
-
-        // DXF LINE entity group codes: https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-DXF/files/GUID-FCEF5726-53AE-4C43-B4EA-C84EB8686A66.htm
-        function exportBoundaryDXF() {
-            if (!analysisActive) { updateStatus('Click an analysis point first — the DXF exports the safe-zone boundary for that pose.', false); return; }
-            const segs = [];
-            const z2 = cfg.z[1];
-            const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
-            const tmp = new THREE.Vector3();
-            const P = [pA, pB, pC];
-            const D = [0, 0, 0];
-
-            currentModel.updateMatrixWorld(true);
-            currentModel.traverse((child) => {
-                if (!child.isMesh || !isPartSelected(child)) return;
-                const g = child.geometry;
-                const pos = g.attributes.position;
-                const idx = g.index;
-                if (!idx) return;
-
-                for (let t = 0; t < idx.count; t += 3) {
-                    for (let k = 0; k < 3; k++) {
-                        P[k].fromBufferAttribute(pos, idx.getX(t + k)).applyMatrix4(child.matrixWorld);
-                        D[k] = tmp.subVectors(refPoint, P[k]).dot(refNormal);
-                    }
-                    const pts = [];
-                    for (let k = 0; k < 3; k++) {
-                        const a = k, b = (k + 1) % 3;
-                        if ((D[a] - z2) * (D[b] - z2) < 0) {
-                            const s = (z2 - D[a]) / (D[b] - D[a]);
-                            pts.push(new THREE.Vector3().lerpVectors(P[a], P[b], s));
-                        }
-                    }
-                    if (pts.length === 2) segs.push(pts);
-                }
-            });
-
-            if (segs.length === 0) { updateStatus('No safe-zone boundary found — the whole visible surface may be inside (or outside) the limit.', false); return; }
-
-            let dxf = '0\nSECTION\n2\nENTITIES\n';
-            for (const [a, b] of segs) {
-                dxf += `0\nLINE\n8\nPRINT_BOUNDARY\n10\n${a.x.toFixed(4)}\n20\n${a.y.toFixed(4)}\n30\n${a.z.toFixed(4)}\n11\n${b.x.toFixed(4)}\n21\n${b.y.toFixed(4)}\n31\n${b.z.toFixed(4)}\n`;
-            }
-            dxf += '0\nENDSEC\n0\nEOF\n';
-
-            const blob = new Blob([dxf], { type: 'application/dxf' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'print-boundary.dxf';
-            a.click();
-            URL.revokeObjectURL(a.href);
-            updateStatus(`Exported ${segs.length} boundary segments (layer PRINT_BOUNDARY). Note: model is re-centered at origin — align in Rhino as needed.`, false);
         }
 
         // ================= References panel =================

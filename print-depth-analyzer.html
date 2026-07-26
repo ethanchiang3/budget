@@ -47,10 +47,10 @@
 
     <style>
         :root {
-            --accent: #8ab4f8;
+            --accent: #ffffff;
             --border-subtle: rgba(255,255,255,0.08);
             --border-hover: rgba(255,255,255,0.18);
-            --focus-ring: 0 0 0 3px rgba(138,180,248,0.28);
+            --focus-ring: 0 0 0 3px rgba(255,255,255,0.35);
             --surface-tonal: rgba(255,255,255,0.035);
             --surface-tonal-hover: rgba(255,255,255,0.075);
         }
@@ -75,7 +75,7 @@
         .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
         .no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
-        .loader { border: 3px solid rgba(26, 115, 232, 0.2); border-top: 3px solid #1a73e8; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
+        .loader { border: 3px solid rgba(32, 33, 36, 0.2); border-top: 3px solid #202124; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
         #status-bar { transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1), opacity 0.3s ease; }
@@ -141,13 +141,13 @@
         .seg-btn:last-child { border-radius: 0 9999px 9999px 0; border-left: none; }
         .seg-btn:nth-child(2) { border-left: none; }
         .seg-btn:hover { color: #e8eaed; }
-        .seg-btn.seg-active { background: rgba(138,180,248,0.15); color: var(--accent); border-color: var(--accent); }
+        .seg-btn.seg-active { background: rgba(255,255,255,0.15); color: var(--accent); border-color: var(--accent); }
 
         .stripe-swatch { background: repeating-linear-gradient(45deg, #800080 0 3px, #b04ab0 3px 6px); }
 
         .point-chip { font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 9999px; border: 1px solid var(--border-subtle); color: #bdc1c6; background: transparent; cursor: pointer; transition: all .15s; }
         .point-chip:hover { border-color: var(--accent); color: var(--accent); }
-        .point-chip.point-active { background: rgba(138,180,248,0.15); border-color: var(--accent); color: var(--accent); }
+        .point-chip.point-active { background: rgba(255,255,255,0.15); border-color: var(--accent); color: var(--accent); }
 
         .section-title { font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: #9aa0a6; }
 
@@ -162,7 +162,7 @@
         .icon-btn:hover { background: var(--surface-tonal-hover); }
         .icon-btn:disabled:hover { background: var(--surface-tonal); }
         .icon-btn.busy .material-symbols-rounded { animation: spin 1s linear infinite; }
-        .icon-btn.active { background: rgba(138,180,248,0.15); color: var(--accent); }
+        .icon-btn.active { background: rgba(255,255,255,0.15); color: var(--accent); }
 
         button:disabled, .icon-btn:disabled, select:disabled, input:disabled {
             opacity: 0.35; cursor: not-allowed;
@@ -204,7 +204,7 @@
             <!-- Left Controls -->
             <div class="bg-[#2d2e31]/95 backdrop-blur shadow-elevation-3 p-5 rounded-3xl w-full max-w-sm interactive border border-[#3c4043] overflow-y-auto no-scrollbar" style="max-height: calc(100vh - 7rem);">
                 <div class="flex items-center gap-3 mb-1.5">
-                    <div class="w-9 h-9 rounded-full bg-[#8ab4f8]/10 flex items-center justify-center text-[#8ab4f8] shrink-0">
+                    <div class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white shrink-0">
                         <span class="material-symbols-rounded text-xl">3d_rotation</span>
                     </div>
                     <h1 class="text-lg font-medium text-gray-100 tracking-tight flex-1">Print Depth Analyzer</h1>
@@ -219,7 +219,7 @@
                 <!-- MODEL -->
                 <div class="section-title mb-2">Model</div>
                 <div class="flex gap-2 mb-2">
-                    <label class="cursor-pointer bg-[#8ab4f8] hover:bg-[#aecbfa] transition-colors text-[#202124] font-medium py-2.5 px-4 rounded-full text-center text-sm shadow-elevation-2 flex items-center justify-center gap-1.5 flex-1">
+                    <label class="cursor-pointer bg-white hover:bg-gray-200 transition-colors text-[#202124] font-medium py-2.5 px-4 rounded-full text-center text-sm shadow-elevation-2 flex items-center justify-center gap-1.5 flex-1">
                         <span class="material-symbols-rounded text-[18px]">upload_file</span>
                         <span>Upload</span>
                         <input type="file" id="file-input" accept=".obj,.stl,.3dm,.glb,.gltf" class="hidden" />
@@ -270,7 +270,7 @@
                 </div>
                 <div class="flex justify-between items-center mb-1.5 mt-3">
                     <label for="contour-slider" class="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Contour Interval</label>
-                    <span id="contour-value" class="text-[11px] font-medium text-[#8ab4f8] bg-[#8ab4f8]/10 px-2 py-0.5 rounded-full">1.0 mm</span>
+                    <span id="contour-value" class="text-[11px] font-medium text-white bg-white/10 px-2 py-0.5 rounded-full">1.0 mm</span>
                 </div>
                 <input type="range" id="contour-slider" min="0.25" max="2" step="0.25" value="1" class="mb-3" />
                 <div class="grid grid-cols-2 gap-2 mb-4">
@@ -424,7 +424,7 @@
         <!-- Snackbar + FAB -->
         <div class="relative flex justify-center items-end pb-4">
             <button id="reset-fab" title="Reset view & analysis point" aria-label="Reset view & analysis point"
-                class="interactive absolute right-2 bottom-4 w-14 h-14 rounded-2xl bg-[#2d2e31] hover:bg-[#3c4043] active:scale-95 transition-all shadow-elevation-3 border border-[#3c4043] flex items-center justify-center text-[#8ab4f8]">
+                class="interactive absolute right-2 bottom-4 w-14 h-14 rounded-2xl bg-[#2d2e31] hover:bg-[#3c4043] active:scale-95 transition-all shadow-elevation-3 border border-[#3c4043] flex items-center justify-center text-white">
                 <span class="material-symbols-rounded text-2xl">restart_alt</span>
             </button>
             <div id="status-bar" title="Click to dismiss" class="bg-[#e8eaed] text-[#202124] text-sm px-5 py-3 rounded-xl shadow-elevation-3 interactive snackbar-visible flex items-center min-w-[300px]">
@@ -451,26 +451,26 @@
                 <div>
                     <div class="section-title mb-1.5">Direct-to-shape &amp; DOD printing</div>
                     <ul class="space-y-1.5 list-disc list-inside marker:text-gray-600">
-                        <li><a href="https://doi.org/10.3390/machines11050568" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Drop placement accuracy testing of robot-guided inkjet printing onto 3D objects</a> — Machines (MDPI), 2023</li>
-                        <li><a href="https://www.rea-jet.com/en/technologies/drop-on-demand-inkjet-printing-technology" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Drop-on-demand (DOD) printing technology overview</a> — REA JET</li>
-                        <li><a href="https://graphtech.us/what-makes-a-good-dod-inkjet-transport/" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Maximizing print quality: tips for using DOD inkjets</a> — GraphTech</li>
+                        <li><a href="https://doi.org/10.3390/machines11050568" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-2 decoration-white/40 hover:decoration-white">Drop placement accuracy testing of robot-guided inkjet printing onto 3D objects</a> — Machines (MDPI), 2023</li>
+                        <li><a href="https://www.rea-jet.com/en/technologies/drop-on-demand-inkjet-printing-technology" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-2 decoration-white/40 hover:decoration-white">Drop-on-demand (DOD) printing technology overview</a> — REA JET</li>
+                        <li><a href="https://graphtech.us/what-makes-a-good-dod-inkjet-transport/" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-2 decoration-white/40 hover:decoration-white">Maximizing print quality: tips for using DOD inkjets</a> — GraphTech</li>
                     </ul>
                 </div>
                 <div>
                     <div class="section-title mb-1.5">Curvature &amp; developable surfaces</div>
                     <ul class="space-y-1.5 list-disc list-inside marker:text-gray-600">
-                        <li><a href="https://en.wikipedia.org/wiki/Developable_surface" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Developable surface</a> — Wikipedia (why zero-Gaussian-curvature areas print without distortion)</li>
-                        <li><a href="https://groups.csail.mit.edu/gdpgroup/assets/6838_spring_2021/chapter5.pdf" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Curvature of Smooth and Discrete Surfaces</a> — MIT 6.838 course notes</li>
-                        <li><a href="http://math.uchicago.edu/~may/REU2015/REUPapers/Upadhyay.pdf" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Gauss&#8211;Bonnet for Discrete Surfaces</a> — angle-deficit curvature, the method this tool uses for |K|</li>
-                        <li><a href="https://web.engr.oregonstate.edu/~grimmc/Curvature/cagd_curvature_gatzke_grimm_submit.pdf" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">Estimating Curvature on Triangular Meshes</a> — Gatzke &amp; Grimm</li>
+                        <li><a href="https://en.wikipedia.org/wiki/Developable_surface" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-2 decoration-white/40 hover:decoration-white">Developable surface</a> — Wikipedia (why zero-Gaussian-curvature areas print without distortion)</li>
+                        <li><a href="https://groups.csail.mit.edu/gdpgroup/assets/6838_spring_2021/chapter5.pdf" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-2 decoration-white/40 hover:decoration-white">Curvature of Smooth and Discrete Surfaces</a> — MIT 6.838 course notes</li>
+                        <li><a href="http://math.uchicago.edu/~may/REU2015/REUPapers/Upadhyay.pdf" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-2 decoration-white/40 hover:decoration-white">Gauss&#8211;Bonnet for Discrete Surfaces</a> — angle-deficit curvature, the method this tool uses for |K|</li>
+                        <li><a href="https://web.engr.oregonstate.edu/~grimmc/Curvature/cagd_curvature_gatzke_grimm_submit.pdf" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-2 decoration-white/40 hover:decoration-white">Estimating Curvature on Triangular Meshes</a> — Gatzke &amp; Grimm</li>
                     </ul>
                 </div>
                 <div>
                     <div class="section-title mb-1.5">Implementation references</div>
                     <ul class="space-y-1.5 list-disc list-inside marker:text-gray-600">
-                        <li><a href="https://threejs.org/docs/#examples/en/loaders/OBJLoader" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">three.js OBJLoader / STLLoader / GLTFLoader</a> — model import docs</li>
-                        <li><a href="https://threejs.org/docs/pages/Rhino3dmLoader.html" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">three.js Rhino3dmLoader</a> — .3dm import docs</li>
-                        <li><a href="https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-DXF/files/GUID-FCEF5726-53AE-4C43-B4EA-C84EB8686A66.htm" target="_blank" rel="noopener noreferrer" class="text-[#8ab4f8] hover:underline">DXF Reference — LINE entity</a> — Autodesk, format used by Boundary DXF export</li>
+                        <li><a href="https://threejs.org/docs/#examples/en/loaders/OBJLoader" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-2 decoration-white/40 hover:decoration-white">three.js OBJLoader / STLLoader / GLTFLoader</a> — model import docs</li>
+                        <li><a href="https://threejs.org/docs/pages/Rhino3dmLoader.html" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-2 decoration-white/40 hover:decoration-white">three.js Rhino3dmLoader</a> — .3dm import docs</li>
+                        <li><a href="https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-DXF/files/GUID-FCEF5726-53AE-4C43-B4EA-C84EB8686A66.htm" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-2 decoration-white/40 hover:decoration-white">DXF Reference — LINE entity</a> — Autodesk, format used by Boundary DXF export</li>
                     </ul>
                 </div>
             </div>
@@ -1234,7 +1234,7 @@
             const toggle = document.getElementById('print-toggle');
             document.getElementById('print-toggle-thumb').style.transform = on ? 'translateX(18px)' : 'translateX(0)';
             toggle.setAttribute('aria-checked', String(on));
-            toggle.style.background = on ? '#8ab4f8' : '#5f6368';
+            toggle.style.background = on ? '#000000' : '#5f6368'; // black, not white — the thumb itself is white
             if (!on) setArtDragMode(false); // nothing to see/drag once the preview is off
         }
 
@@ -1392,11 +1392,11 @@
         function drawHelpers(point, normal) {
             clearHelpers();
             const arrowLen = modelScale * 0.35;
-            helperGroup.add(new THREE.ArrowHelper(normal, point, arrowLen, 0x8ab4f8, arrowLen * 0.2, arrowLen * 0.12));
+            helperGroup.add(new THREE.ArrowHelper(normal, point, arrowLen, 0xffffff, arrowLen * 0.2, arrowLen * 0.12));
 
             const marker = new THREE.Mesh(
                 new THREE.SphereGeometry(Math.max(modelScale * 0.012, 0.3), 16, 16),
-                new THREE.MeshBasicMaterial({ color: 0x8ab4f8 })
+                new THREE.MeshBasicMaterial({ color: 0xffffff })
             );
             marker.position.copy(point);
             helperGroup.add(marker);
@@ -1405,14 +1405,14 @@
             const planeMesh = new THREE.Mesh(
                 new THREE.PlaneGeometry(planeSize, planeSize),
                 new THREE.MeshBasicMaterial({
-                    color: 0x8ab4f8, transparent: true, opacity: 0.1, side: THREE.DoubleSide,
+                    color: 0xffffff, transparent: true, opacity: 0.1, side: THREE.DoubleSide,
                     depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4
                 })
             );
             planeMesh.position.copy(point);
             planeMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
 
-            const gridGeom = new THREE.GridHelper(planeSize, 24, 0x8ab4f8, 0x8ab4f8);
+            const gridGeom = new THREE.GridHelper(planeSize, 24, 0xffffff, 0xffffff);
             gridGeom.material.opacity = 0.25;
             gridGeom.material.transparent = true;
             gridGeom.material.polygonOffset = true;

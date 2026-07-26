@@ -937,6 +937,20 @@
         const dragPlane = new THREE.Plane();
         const dragPoint = new THREE.Vector3();
 
+        // Dragging the marker itself (the sphere/arrow at the analysis point) moves
+        // the pose live, without needing Reposition mode or a fresh click.
+        let markerDragActive = false;
+        const MARKER_HIT_PX = 30;
+        const markerProj = new THREE.Vector3();
+
+        function isNearMarker(clientX, clientY) {
+            if (!analysisActive) return false;
+            markerProj.copy(refPoint).project(camera);
+            const sx = (markerProj.x * 0.5 + 0.5) * window.innerWidth;
+            const sy = (-markerProj.y * 0.5 + 0.5) * window.innerHeight;
+            return Math.hypot(clientX - sx, clientY - sy) < MARKER_HIT_PX;
+        }
+
         function onPointerDown(event) {
             pointerDownTime = Date.now();
             pointerDownPos.set(event.clientX, event.clientY);
@@ -944,6 +958,12 @@
             if (artDragMode && analysisActive) {
                 artDragLastUV = planeUV(event.clientX, event.clientY);
                 artDragActive = !!artDragLastUV;
+            } else if (!artDragMode && isNearMarker(event.clientX, event.clientY)) {
+                markerDragActive = true;
+                controls.enabled = false;
+                activePointIdx = -1; // moving off a saved point's exact spot
+                renderPointChips();
+                renderer.domElement.style.cursor = 'grabbing';
             }
 
             window.addEventListener('pointerup', onPointerUp, { once: true });
@@ -952,6 +972,14 @@
             artDragActive = false;
             artDragLastUV = null;
             if (artDragMode) return; // dragging repositions the print, not a new analysis point
+
+            if (markerDragActive) {
+                markerDragActive = false;
+                controls.enabled = true;
+                renderer.domElement.style.cursor = '';
+                applyAnalysis(refPoint.clone(), refNormal.clone()); // full stats recompute for the final spot
+                return;
+            }
 
             const dt = Date.now() - pointerDownTime;
             const dist = pointerDownPos.distanceTo(new THREE.Vector2(event.clientX, event.clientY));
@@ -1006,10 +1034,10 @@
             return n.applyMatrix3(nm).normalize();
         }
 
-        // Moves the analysis pose. Does NOT save to the points list — callers set
-        // activePointIdx beforehand (either to -1 for a fresh/unsaved pose, or to a
-        // saved point's index when revisiting one). Use recordCurrentPosition() to save.
-        function applyAnalysis(point, normal) {
+        // Cheap half of applyAnalysis: moves the pose (uniforms + helper markers)
+        // without touching stats/chips/status. Used every frame while dragging the
+        // marker so the drag stays smooth; the full recompute happens once on release.
+        function updatePoseUniforms(point, normal) {
             refPoint.copy(point);
             refNormal.copy(normal);
 
@@ -1026,10 +1054,17 @@
             u.uIsActive.value = 1;
             analysisActive = true;
 
-            renderPointChips();
-
             drawHelpers(refPoint, refNormal);
             helperGroup.visible = !printPreviewOn;
+        }
+
+        // Moves the analysis pose and recomputes stats/chips/status. Does NOT save to
+        // the points list — callers set activePointIdx beforehand (either to -1 for a
+        // fresh/unsaved pose, or to a saved point's index when revisiting one). Use
+        // recordCurrentPosition() to save.
+        function applyAnalysis(point, normal) {
+            updatePoseUniforms(point, normal);
+            renderPointChips();
             const stats = computeDepthStats(refPoint, refNormal);
             showResults(stats);
             updateActionAvailability();
@@ -1385,6 +1420,11 @@
         let lastHoverEvent = null;
 
         function onPointerMove(event) {
+            if (markerDragActive) {
+                const hit = raycastModel(event.clientX, event.clientY);
+                if (hit) updatePoseUniforms(hit.point.clone(), worldNormalFromHit(hit));
+                return;
+            }
             if (artDragActive) {
                 const uv = planeUV(event.clientX, event.clientY);
                 if (uv) {
@@ -1396,6 +1436,9 @@
                 return;
             }
             if (!analysisActive) return;
+            if (!artDragMode) {
+                renderer.domElement.style.cursor = isNearMarker(event.clientX, event.clientY) ? 'grab' : '';
+            }
             lastHoverEvent = event;
             if (hoverPending) return;
             hoverPending = true;

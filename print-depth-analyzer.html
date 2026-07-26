@@ -332,7 +332,12 @@
 
                 <!-- RESULTS -->
                 <div id="results-panel" class="mt-4 pt-4 border-t border-[#3c4043]">
-                    <h3 class="section-title mb-2">Analysis Results</h3>
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="section-title">Analysis Results</h3>
+                        <button id="record-point-btn" class="icon-btn !text-[11px] !py-1 !px-2.5" disabled title="Save this position to the list below">
+                            <span class="material-symbols-rounded text-[14px]">bookmark_add</span>Record
+                        </button>
+                    </div>
                     <div id="points-row" class="flex flex-wrap gap-1.5 mb-3"></div>
                     <div class="grid grid-cols-2 gap-2">
                         <div class="bg-white/5 rounded-2xl p-2.5" title="Deepest point on the visible, front-facing surface relative to the clicked reference point">
@@ -787,6 +792,7 @@
             document.getElementById('remove-model-btn').addEventListener('click', removeModel);
             document.getElementById('default-model-btn').addEventListener('click', restoreDefaultModel);
             document.getElementById('reset-fab').addEventListener('click', resetView);
+            document.getElementById('record-point-btn').addEventListener('click', recordCurrentPosition);
             document.getElementById('contour-slider').addEventListener('input', onContourChange);
             document.getElementById('print-toggle').addEventListener('click', onPrintToggle);
             document.getElementById('art-move-btn').addEventListener('click', onArtMoveToggle);
@@ -903,7 +909,10 @@
             const dist = pointerDownPos.distanceTo(new THREE.Vector2(event.clientX, event.clientY));
             if (dt < 300 && dist < 5) {
                 const hit = raycastModel(event.clientX, event.clientY);
-                if (hit) applyAnalysis(hit.point.clone(), worldNormalFromHit(hit), true);
+                if (hit) {
+                    activePointIdx = -1; // fresh pose — not saved until Record is pressed
+                    applyAnalysis(hit.point.clone(), worldNormalFromHit(hit));
+                }
             }
         }
 
@@ -949,7 +958,10 @@
             return n.applyMatrix3(nm).normalize();
         }
 
-        function applyAnalysis(point, normal, save) {
+        // Moves the analysis pose. Does NOT save to the points list — callers set
+        // activePointIdx beforehand (either to -1 for a fresh/unsaved pose, or to a
+        // saved point's index when revisiting one). Use recordCurrentPosition() to save.
+        function applyAnalysis(point, normal) {
             refPoint.copy(point);
             refNormal.copy(normal);
 
@@ -966,11 +978,6 @@
             u.uIsActive.value = 1;
             analysisActive = true;
 
-            if (save) {
-                savedPoints.push({ point: point.clone(), normal: normal.clone() });
-                if (savedPoints.length > 6) savedPoints.shift();
-                activePointIdx = savedPoints.length - 1;
-            }
             renderPointChips();
 
             drawHelpers(refPoint, refNormal);
@@ -979,6 +986,17 @@
             showResults(stats);
             updateActionAvailability();
             updateStatus(`Analysis complete. Center: [${refPoint.x.toFixed(1)}, ${refPoint.y.toFixed(1)}, ${refPoint.z.toFixed(1)}]`, false);
+        }
+
+        // Saves the current pose as a lettered point (max 6, oldest dropped) —
+        // the only way a position lands in the list, per the explicit Record action.
+        function recordCurrentPosition() {
+            if (!analysisActive) return;
+            savedPoints.push({ point: refPoint.clone(), normal: refNormal.clone() });
+            if (savedPoints.length > 6) savedPoints.shift();
+            activePointIdx = savedPoints.length - 1;
+            renderPointChips();
+            updateStatus(`Position ${String.fromCharCode(65 + activePointIdx)} recorded.`, false);
         }
 
         function renderPointChips() {
@@ -992,7 +1010,7 @@
                 b.setAttribute('aria-pressed', String(i === activePointIdx));
                 b.addEventListener('click', () => {
                     activePointIdx = i;
-                    applyAnalysis(sp.point, sp.normal, false);
+                    applyAnalysis(sp.point, sp.normal);
                 });
                 row.appendChild(b);
             });
@@ -1021,6 +1039,8 @@
             const printToggle = document.getElementById('print-toggle');
             printToggle.disabled = !analysisActive;
             printToggle.title = analysisActive ? 'Toggle the finished-print simulation' : 'Click a surface point first';
+
+            document.getElementById('record-point-btn').disabled = !analysisActive;
 
             const clearBtn = document.getElementById('art-clear-btn');
             clearBtn.disabled = !hasArt;
@@ -1190,8 +1210,9 @@
                 }
 
                 if (best && best.score > 0) {
-                    applyAnalysis(best.point, best.dir, true);
-                    updateStatus(`Best pose found: ${best.score} printable vertices in the safe zone.`, false);
+                    activePointIdx = -1; // found pose — not saved until Record is pressed
+                    applyAnalysis(best.point, best.dir);
+                    updateStatus(`Best pose found: ${best.score} printable vertices in the safe zone. Press Record to save it.`, false);
                 } else {
                     updateStatus('No printable pose found with the current profile.', false);
                 }

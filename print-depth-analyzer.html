@@ -554,7 +554,7 @@
         // doi.org/10.3390/machines11050568
         const DOT_ERR_UM_PER_MM = 20; // est. landing error growth with throw distance (see reference above)
         const ART_SIZE_MIN = 10, ART_SIZE_MAX = 200; // mm, matches the Width slider's range
-        const MAX_PRINT_POINTS = 6; // matches the shader's #define and the saved-points cap
+        const MAX_SAVED_POINTS = 6; // cap on recorded positions (A-F)
 
         const cfg = { z: [1.5, 3.0, 4.0, 5.0], kappa: 0.086, angle: 45 };
 
@@ -623,17 +623,6 @@
             uniform vec2 uArtOffset;    // mm pan within the fixed print pose, set by the Reposition drag tool
             uniform vec3 uModelColor;   // base body color, shown wherever there's no ink
 
-            // Print Preview stamps ink at every recorded point simultaneously (falls
-            // back to the single live pose when nothing's been Recorded yet) — the
-            // Depth/Angle/Stretch analysis views still evaluate uRefPoint/uRefNormal
-            // alone, since those judge one candidate placement at a time.
-            #define MAX_PRINT_POINTS 6
-            uniform int uPrintCount;
-            uniform vec3 uPrintPos[MAX_PRINT_POINTS];
-            uniform vec3 uPrintNormal[MAX_PRINT_POINTS];
-            uniform vec3 uPrintTangent[MAX_PRINT_POINTS];
-            uniform vec3 uPrintBitangent[MAX_PRINT_POINTS];
-
             varying vec3 vWorldPosition;
             varying vec3 vWorldNormal;
             varying float vCurvature;
@@ -696,41 +685,22 @@
 
                 // ---- Print preview: simulate finished product ----
                 if (uShowPrint == 1) {
-                    // A fragment is on the "printable side" if it faces toward ANY
-                    // recorded point's axis, even if it's back-facing relative to others.
-                    bool anyFront = false;
-                    for (int i = 0; i < MAX_PRINT_POINTS; i++) {
-                        if (i >= uPrintCount) break;
-                        if (dot(N, uPrintNormal[i]) >= -0.1) { anyFront = true; break; }
-                    }
-                    vec3 col = anyFront ? uModelColor : uModelColor * 0.37;
+                    vec3 col = back ? uModelColor * 0.37 : uModelColor;
 
-                    for (int i = 0; i < MAX_PRINT_POINTS; i++) {
-                        if (i >= uPrintCount) break;
-                        vec3 pPos = uPrintPos[i];
-                        vec3 pNorm = uPrintNormal[i];
-                        float pFacing = dot(N, pNorm);
-                        if (pFacing < -0.1 || overK) continue; // back (for this point) or over-curved — no ink from it
-
-                        float pDepth = dot(pPos - vWorldPosition, pNorm);
-                        float pPrintDepth = max(pDepth, 0.0);
-
-                        if (pPrintDepth <= uZ.z) {
+                    if (!back && !overK) {
+                        if (printDepth <= uZ.z) {
                             // Continuous quality falloff: sharp in optimal zone,
                             // fading through safe and marginal, gone past marginal.
                             float q = 1.0
-                                - smoothstep(uZ.x, uZ.y, pPrintDepth) * 0.25
-                                - smoothstep(uZ.y, uZ.z, pPrintDepth) * 0.55;
+                                - smoothstep(uZ.x, uZ.y, printDepth) * 0.25
+                                - smoothstep(uZ.y, uZ.z, printDepth) * 0.55;
                             // Incidence-angle penalty: ink degrades on steep slopes
-                            q *= smoothstep(uMaxAngleCos - 0.10, uMaxAngleCos + 0.10, pFacing);
+                            q *= smoothstep(uMaxAngleCos - 0.10, uMaxAngleCos + 0.10, facing);
                             if (overG) q *= 0.6; // double curvature distorts laydown
 
                             if (q > 0.002) {
-                                vec3 rel = vWorldPosition - pPos;
-                                // uArtOffset pans the pattern the same way within every point's
-                                // pose — the pose (and this quality falloff) stays put per point;
-                                // only which part of the surface shows which part of the pattern moves.
-                                vec2 uv = vec2(dot(rel, uPrintTangent[i]), dot(rel, uPrintBitangent[i])) - uArtOffset;
+                                vec3 rel = vWorldPosition - uRefPoint;
+                                vec2 uv = vec2(dot(rel, uTangent), dot(rel, uBitangent)) - uArtOffset;
                                 if (uUseArt == 1) {
                                     vec2 auv = rot2(uv, -uArtRot) / uArtSize + 0.5;
                                     if (auv.x >= 0.0 && auv.x <= 1.0 && auv.y >= 0.0 && auv.y <= 1.0) {
@@ -752,9 +722,9 @@
                             }
                         }
 
-                        // Safe-zone boundary iso-line for this point
-                        float fw3 = fwidth(pDepth) * 1.2 + 0.0005;
-                        float bLine = 1.0 - smoothstep(fw3, fw3 * 2.5, abs(pDepth - uZ.y));
+                        // Safe-zone boundary iso-line
+                        float fw3 = fwidth(depth) * 1.2 + 0.0005;
+                        float bLine = 1.0 - smoothstep(fw3, fw3 * 2.5, abs(depth - uZ.y));
                         col = mix(col, vec3(0.54, 0.71, 0.97), bLine * 0.65);
                     }
 
@@ -865,12 +835,7 @@
                     uArtSize:  { value: new THREE.Vector2(40, 40) },
                     uArtRot:   { value: 0 },
                     uArtOffset: { value: new THREE.Vector2(0, 0) },
-                    uModelColor: { value: new THREE.Color(0xe6e6e6) },
-                    uPrintCount: { value: 0 },
-                    uPrintPos:       { value: Array.from({ length: MAX_PRINT_POINTS }, () => new THREE.Vector3()) },
-                    uPrintNormal:    { value: Array.from({ length: MAX_PRINT_POINTS }, () => new THREE.Vector3(0, 1, 0)) },
-                    uPrintTangent:   { value: Array.from({ length: MAX_PRINT_POINTS }, () => new THREE.Vector3(1, 0, 0)) },
-                    uPrintBitangent: { value: Array.from({ length: MAX_PRINT_POINTS }, () => new THREE.Vector3(0, 0, 1)) }
+                    uModelColor: { value: new THREE.Color(0xe6e6e6) }
                 },
                 side: THREE.DoubleSide,
                 extensions: { derivatives: true }
@@ -1098,24 +1063,6 @@
 
             drawHelpers(refPoint, refNormal);
             helperGroup.visible = !printPreviewOn;
-            updatePrintPoints();
-        }
-
-        // Feeds the shader's print-point arrays (see uPrintCount/uPrintPos/etc.) from
-        // the recorded points list, falling back to the single live pose when nothing's
-        // been Recorded yet — Print Preview stamps ink at every one simultaneously.
-        function updatePrintPoints() {
-            const points = savedPoints.length > 0
-                ? savedPoints
-                : (analysisActive ? [{ point: refPoint, normal: refNormal }] : []);
-            const n = Math.min(points.length, MAX_PRINT_POINTS);
-            const u = customShaderMaterial.uniforms;
-            u.uPrintCount.value = n;
-            for (let i = 0; i < n; i++) {
-                u.uPrintPos.value[i].copy(points[i].point);
-                u.uPrintNormal.value[i].copy(points[i].normal);
-                computeTangentBasis(points[i].normal, u.uPrintTangent.value[i], u.uPrintBitangent.value[i]);
-            }
         }
 
         // Moves the analysis pose and recomputes stats/chips/status. Does NOT save to
@@ -1136,20 +1083,16 @@
         function recordCurrentPosition() {
             if (!analysisActive) return;
             savedPoints.push({ point: refPoint.clone(), normal: refNormal.clone() });
-            if (savedPoints.length > MAX_PRINT_POINTS) savedPoints.shift();
+            if (savedPoints.length > MAX_SAVED_POINTS) savedPoints.shift();
             activePointIdx = savedPoints.length - 1;
             renderPointChips();
-            updatePrintPoints();
-            updateStatus(savedPoints.length > 1
-                ? `Position ${String.fromCharCode(65 + activePointIdx)} recorded — Print Preview now shows all ${savedPoints.length} points together.`
-                : `Position ${String.fromCharCode(65 + activePointIdx)} recorded.`, false);
+            updateStatus(`Position ${String.fromCharCode(65 + activePointIdx)} recorded.`, false);
         }
 
         function clearSavedPoints() {
             savedPoints = [];
             activePointIdx = -1;
             renderPointChips();
-            updatePrintPoints();
         }
 
         function renderPointChips() {

@@ -58,6 +58,28 @@
             </div>
         );
 
+        // 在 claude.ai Artifact 內頁面無法自行下載，改用 downloads capability；其他環境照常以連結下載
+        const saveFile = async (filename, blob) => {
+            const downloads = window.claude?.use ? await window.claude.use('downloads') : null;
+            if (downloads) {
+                try { await downloads.save({ filename, data: blob }); }
+                catch (err) { if (err?.code !== 'declined') console.warn('Save failed:', err?.message || err); }
+                return;
+            }
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = URL.createObjectURL(blob);
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        };
+
+        const dataURLToBlob = (url) => {
+            const [head, body] = url.split(',');
+            const bin = atob(body); const buf = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+            return new Blob([buf], { type: head.slice(5, head.indexOf(';')) });
+        };
+
         // 幾何工具
         const round1 = (v) => Math.round(v * 10) / 10;
         const dist = (ax, ay, bx, by) => Math.sqrt((ax - bx)**2 + (ay - by)**2);
@@ -492,10 +514,7 @@
                 const ctx = off.getContext('2d', { alpha: false });
                 ctx.setTransform(scale, 0, 0, scale, 0, 0);
                 drawScene(ctx, canvasDim.w, canvasDim.h, collectDots());
-                const link = document.createElement('a');
-                link.download = `Braun_Pattern_Lab_${Date.now()}.png`;
-                link.href = off.toDataURL('image/png');
-                link.click();
+                saveFile(`Braun_Pattern_Lab_${Date.now()}.png`, dataURLToBlob(off.toDataURL('image/png')));
             };
 
             const exportSVG = () => {
@@ -510,12 +529,7 @@
                     svgContent += `<circle cx="${d.x.toFixed(3)}" cy="${d.y.toFixed(3)}" r="${(d.dia/2).toFixed(3)}" fill="${color}"/>`;
                 });
                 svgContent += `</g></svg>`;
-                const blob = new Blob([svgContent], { type: 'image/svg+xml' });
-                const link = document.createElement('a');
-                link.download = `Braun_Pattern_Lab_${Date.now()}.svg`;
-                link.href = URL.createObjectURL(blob);
-                link.click();
-                setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+                saveFile(`Braun_Pattern_Lab_${Date.now()}.svg`, new Blob([svgContent], { type: 'image/svg+xml' }));
             };
 
             useLayoutEffect(() => {

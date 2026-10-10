@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>pattern LAB Pro v8.3</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <title>pattern LAB Pro v8.4</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
         html, body { height: 100dvh; margin: 0; padding: 0; overflow: hidden; background-color: #f8f8f8; font-family: 'Inter', sans-serif; }
@@ -29,15 +29,23 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useLayoutEffect, useCallback } = React;
+        const { useState, useEffect, useRef, useLayoutEffect } = React;
 
         // 常數定義
         const FIELD_ICONS = { none: 'ban', radial: 'target', curve: 'spline', line: 'minus' };
+        const BOUNDARY_SHAPES = ['rect', 'circle', 'quad'];
+        const LINE_COLOR = '#eab308';
+        const IMAGE_COLOR = '#3b82f6';
 
+        // lucide 會把 <i> 換成 <svg>；放進 React 不管理內容的 span，卸載時才不會 removeChild 出錯
         const Icon = ({ name, size = 16, className = "" }) => {
-            const iconRef = useRef(null);
-            useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name]);
-            return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
+            const ref = useRef(null);
+            useEffect(() => {
+                if (!ref.current || !window.lucide) return;
+                ref.current.innerHTML = `<i data-lucide="${name}" style="width:${size}px;height:${size}px"></i>`;
+                window.lucide.createIcons();
+            }, [name, size]);
+            return <span ref={ref} style={{ width: size, height: size }} className={`flex shrink-0 ${className}`}></span>;
         };
 
         const ControlGroup = ({ label, value, min, max, step, onChange, dark, colorClass }) => (
@@ -50,11 +58,66 @@
             </div>
         );
 
+        // 幾何工具
+        const round1 = (v) => Math.round(v * 10) / 10;
+        const dist = (ax, ay, bx, by) => Math.sqrt((ax - bx)**2 + (ay - by)**2);
+
+        const getBezierPoint = (t, pts) => {
+            const it = 1 - t;
+            return {
+                x: it**3 * pts[0].x + 3*it**2 * t * pts[1].x + 3*it * t**2 * pts[2].x + t**3 * pts[3].x,
+                y: it**3 * pts[0].y + 3*it**2 * t * pts[1].y + 3*it * t**2 * pts[2].y + t**3 * pts[3].y
+            };
+        };
+
+        const distToSegment = (x, y, p1, p2) => {
+            const dx = p2.x - p1.x; const dy = p2.y - p1.y;
+            const lenSq = dx*dx + dy*dy;
+            const t = lenSq > 0 ? Math.max(0, Math.min(1, ((x - p1.x) * dx + (y - p1.y) * dy) / lenSq)) : 0;
+            return dist(x, y, p1.x + t * dx, p1.y + t * dy);
+        };
+
+        const pointInPolygon = (x, y, pts) => {
+            let inside = false;
+            for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+                const a = pts[i], b = pts[j];
+                if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+            }
+            return inside;
+        };
+
+        // 沿參數 t ∈ [t0, t1] 取樣，回傳落在邊界內的區段；區段端點以二分法逼近到邊界上
+        const insideRuns = (inside, t0, t1, samples = 400) => {
+            const refine = (a, b) => { // a 在內、b 在外
+                for (let k = 0; k < 24; k++) { const m = (a + b) / 2; if (inside(m)) a = m; else b = m; }
+                return a;
+            };
+            const runs = []; let run = null; let prevT = t0;
+            for (let i = 0; i <= samples; i++) {
+                const t = t0 + (t1 - t0) * (i / samples);
+                const isIn = inside(t);
+                if (isIn && !run) { run = { s: i === 0 ? t : refine(t, prevT), e: t }; runs.push(run); }
+                else if (isIn) run.e = t;
+                else if (run) { run.e = refine(prevT, t); run = null; }
+                prevT = t;
+            }
+            return runs;
+        };
+
+        // 在 [s, e] 上以接近 pitch 的間距均分佈點，兩端貼齊；offset 為交錯列的步距比例
+        const spread = (s, e, pitch, offset, place) => {
+            const n = Math.round((e - s) / pitch) + 1;
+            if (n < 2) { place((s + e) / 2); return; }
+            const step = (e - s) / (n - 1);
+            for (let i = 0; i < n; i++) { const t = s + (i + offset) * step; if (t <= e + 1e-9) place(t); }
+        };
+
         const App = () => {
             const HANDLE_RADIUS = 25;
             const canvasRef = useRef(null);
             const containerRef = useRef(null);
             const fileInputRef = useRef(null);
+            const dragRef = useRef(null);
 
             const [patternType, setPatternType] = useState('splineGrid');
             const [boundaryShape, setBoundaryShape] = useState('rect');
@@ -63,6 +126,7 @@
             const [hoverHighlight, setHoverHighlight] = useState('none');
             const [bgImage, setBgImage] = useState(null);
             const [canvasDim, setCanvasDim] = useState({ w: 0, h: 0 });
+            const [dragMode, setDragMode] = useState(null);
 
             const [params, setParams] = useState({
                 baseDiameter: 2.5,
@@ -74,6 +138,7 @@
                 stagger: 0.5,
                 bL: -120, bR: 120, bT: -50, bB: 50,
                 bCX: 0, bCY: 0, bRad: 60,
+                quadPts: [ {x: -100, y: -50}, {x: 100, y: -50}, {x: 120, y: 50}, {x: -120, y: 50} ],
                 influenceRange: 35,
                 attractorRadius: 60,
                 falloff: 1.0,
@@ -89,7 +154,6 @@
                 bgColor: '#ffffff', color: '#1a1a1a'
             });
 
-            const [interaction, setInteraction] = useState({ active: false, mode: null, index: -1, startX: 0, startY: 0 });
             const [stats, setStats] = useState({ visibleDots: 0, transparency: 0, minVal: 0, maxVal: 0 });
 
             const handleImageUpload = (e) => {
@@ -103,43 +167,64 @@
                     };
                     reader.readAsDataURL(file);
                 }
+                e.target.value = '';
             };
 
-            const onWheel = useCallback((e) => {
-                e.preventDefault();
-                const factor = e.deltaY > 0 ? 0.92 : 1.08;
-                setParams(p => ({ ...p, viewZoom: Math.min(Math.max(p.viewZoom * factor, 1), 100) }));
+            // 以游標位置為中心縮放；React 的 onWheel 是 passive，無法 preventDefault，改用原生監聽
+            useEffect(() => {
+                const el = containerRef.current;
+                if (!el) return;
+                const onWheel = (e) => {
+                    e.preventDefault();
+                    const rect = el.getBoundingClientRect();
+                    const sx = e.clientX - rect.left - rect.width / 2; const sy = e.clientY - rect.top - rect.height / 2;
+                    const factor = e.deltaY > 0 ? 0.92 : 1.08;
+                    setParams(p => {
+                        const zoom = Math.min(Math.max(p.viewZoom * factor, 1), 100);
+                        const k = zoom / p.viewZoom;
+                        return { ...p, viewZoom: zoom, panX: sx - (sx - p.panX) * k, panY: sy - (sy - p.panY) * k };
+                    });
+                };
+                el.addEventListener('wheel', onWheel, { passive: false });
+                return () => el.removeEventListener('wheel', onWheel);
             }, []);
 
-            const getBezierPoint = (t, pts) => {
-                const it = 1 - t;
-                return {
-                    x: it**3 * pts[0].x + 3*it**2 * t * pts[1].x + 3*it * t**2 * pts[2].x + t**3 * pts[3].x,
-                    y: it**3 * pts[0].y + 3*it**2 * t * pts[1].y + 3*it * t**2 * pts[2].y + t**3 * pts[3].y
-                };
+            const getBounds = () => {
+                if (boundaryShape === 'rect') return { minX: Math.min(params.bL, params.bR), maxX: Math.max(params.bL, params.bR), minY: Math.min(params.bT, params.bB), maxY: Math.max(params.bT, params.bB) };
+                if (boundaryShape === 'circle') return { minX: params.bCX - params.bRad, maxX: params.bCX + params.bRad, minY: params.bCY - params.bRad, maxY: params.bCY + params.bRad };
+                const xs = params.quadPts.map(p => p.x); const ys = params.quadPts.map(p => p.y);
+                return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
             };
+
+            const getArea = () => {
+                if (boundaryShape === 'circle') return Math.PI * params.bRad**2;
+                if (boundaryShape === 'rect') return Math.abs((params.bR - params.bL) * (params.bB - params.bT));
+                const q = params.quadPts;
+                return Math.abs(q.reduce((s, p, i) => s + p.x * q[(i + 1) % 4].y - q[(i + 1) % 4].x * p.y, 0)) / 2;
+            };
+
+            // 數值調整邊界尺寸（以中心為基準縮放），與畫布拖曳同步
+            const resizeBoundary = (axis, size) => setParams(p => {
+                if (boundaryShape === 'circle') return { ...p, bRad: size / 2 };
+                if (boundaryShape === 'rect') {
+                    if (axis === 'w') { const c = (p.bL + p.bR) / 2; return { ...p, bL: c - size / 2, bR: c + size / 2 }; }
+                    const c = (p.bT + p.bB) / 2; return { ...p, bT: c - size / 2, bB: c + size / 2 };
+                }
+                const k = axis === 'w' ? 'x' : 'y';
+                const vals = p.quadPts.map(pt => pt[k]); const lo = Math.min(...vals); const hi = Math.max(...vals);
+                const c = (lo + hi) / 2; const s = hi - lo > 0 ? size / (hi - lo) : 1;
+                return { ...p, quadPts: p.quadPts.map(pt => ({ ...pt, [k]: c + (pt[k] - c) * s })) };
+            });
 
             const isInside = (x, y, margin = 0.01) => {
                 if (boundaryShape === 'rect') {
-                    return x >= params.bL - margin && x <= params.bR + margin && y >= params.bT - margin && y <= params.bB + margin;
-                } else {
-                    const d = Math.sqrt((x - params.bCX)**2 + (y - params.bCY)**2);
-                    return d <= params.bRad + margin;
+                    const b = getBounds();
+                    return x >= b.minX - margin && x <= b.maxX + margin && y >= b.minY - margin && y <= b.maxY + margin;
+                } else if (boundaryShape === 'circle') {
+                    return dist(x, y, params.bCX, params.bCY) <= params.bRad + margin;
                 }
-            };
-
-            const getTInsideRange = (pts) => {
-                let firstT = -1, lastT = -1;
-                const samples = 400;
-                for (let i = 0; i <= samples; i++) {
-                    const t = i / samples;
-                    const p = getBezierPoint(t, pts);
-                    if (isInside(p.x, p.y)) {
-                        if (firstT === -1) firstT = t;
-                        lastT = t;
-                    }
-                }
-                return firstT === -1 ? null : { start: firstT, end: lastT };
+                const q = params.quadPts;
+                return pointInPolygon(x, y, q) || q.some((p, i) => distToSegment(x, y, p, q[(i + 1) % 4]) <= margin);
             };
 
             const calculateDotSize = (x, y) => {
@@ -150,163 +235,68 @@
                     let minD = Infinity;
                     for (let i = 0; i <= 20; i++) {
                         const p = getBezierPoint(i / 20, params.cvs);
-                        const d = Math.sqrt((x - p.x)**2 + (y - p.y)**2);
+                        const d = dist(x, y, p.x, p.y);
                         if (d < minD) minD = d;
                     }
                     dAtt = minD;
                 } else if (attractorMode === 'line') {
-                    const [p1, p2] = params.linePts;
-                    const dx = p2.x - p1.x; const dy = p2.y - p1.y;
-                    const lenSq = dx*dx + dy*dy;
-                    let t = Math.max(0, Math.min(1, ((x - p1.x) * dx + (y - p1.y) * dy) / lenSq));
-                    dAtt = Math.sqrt((x - (p1.x + t * dx))**2 + (y - (p1.y + t * dy))**2);
+                    dAtt = distToSegment(x, y, params.linePts[0], params.linePts[1]);
                 }
                 const t = Math.min(1, dAtt / params.influenceRange);
                 return params.minDiameter + (params.baseDiameter - params.minDiameter) * Math.pow(t, params.falloff);
             };
 
-            const handleInteraction = (e, type) => {
-                if (!canvasRef.current) return;
-                const rect = canvasRef.current.getBoundingClientRect();
-                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-                const mx = (clientX - rect.left - canvasDim.w / 2 - params.panX) / params.viewZoom;
-                const my = (clientY - rect.top - canvasDim.h / 2 - params.panY) / params.viewZoom;
-
-                if (type === 'start') {
-                    if (e.button === 1) {
-                        setInteraction({ active: true, mode: 'canvasPan', startX: clientX, startY: clientY });
-                        return;
-                    }
-                    if (boundaryShape === 'rect') {
-                        const corners = [
-                            { id: 'TL', x: params.bL, y: params.bT }, { id: 'TR', x: params.bR, y: params.bT },
-                            { id: 'BL', x: params.bL, y: params.bB }, { id: 'BR', x: params.bR, y: params.bB }
-                        ];
-                        for (let c of corners) {
-                            if (Math.sqrt((mx - c.x)**2 + (my - c.y)**2) * params.viewZoom < HANDLE_RADIUS) {
-                                setInteraction({ active: true, mode: 'boundaryCorner', index: c.id }); return;
-                            }
-                        }
-                    } else {
-                        if (Math.sqrt((mx - params.bCX)**2 + (my - params.bCY)**2) * params.viewZoom < HANDLE_RADIUS) {
-                            setInteraction({ active: true, mode: 'boundaryCircleMove' }); return;
-                        }
-                        if (Math.sqrt((mx - params.bCX)**2 + (my - (params.bCY - params.bRad))**2) * params.viewZoom < HANDLE_RADIUS) {
-                            setInteraction({ active: true, mode: 'boundaryCircleSize' }); return;
-                        }
-                    }
-                    if (attractorMode === 'radial' && Math.sqrt((mx - params.attractorRadius)**2 + (my - 0)**2) * params.viewZoom < HANDLE_RADIUS) {
-                        setInteraction({ active: true, mode: 'radialRadius' }); return;
-                    }
-                    if (patternType === 'splineGrid') {
-                        const splines = [{key: 'boundarySplineA', pts: params.boundarySplineA}, {key: 'boundarySplineB', pts: params.boundarySplineB}];
-                        for (let s of splines) {
-                            for (let i=0; i<4; i++) {
-                                if (Math.sqrt((mx - s.pts[i].x)**2 + (my - s.pts[i].y)**2) * params.viewZoom < HANDLE_RADIUS) {
-                                    setInteraction({ active: true, mode: 'arrayBoundary', splineKey: s.key, index: i }); return;
-                                }
-                            }
-                        }
-                    }
-                    const attrPts = attractorMode === 'curve' ? params.cvs : attractorMode === 'line' ? params.linePts : [];
-                    for (let i = 0; i < attrPts.length; i++) {
-                        if (Math.sqrt((mx - attrPts[i].x)**2 + (my - attrPts[i].y)**2) * params.viewZoom < HANDLE_RADIUS) {
-                            setInteraction({ active: true, mode: 'attractor', index: i }); return;
-                        }
-                    }
-                } else if (type === 'move' && interaction.active) {
-                    if (interaction.mode === 'canvasPan') {
-                        const dx = clientX - interaction.startX;
-                        const dy = clientY - interaction.startY;
-                        setParams(p => ({ ...p, panX: p.panX + dx, panY: p.panY + dy }));
-                        setInteraction(prev => ({ ...prev, startX: clientX, startY: clientY }));
-                    } else if (interaction.mode === 'boundaryCorner') {
-                        if (interaction.index === 'TL') setParams(p => ({ ...p, bL: mx, bT: my }));
-                        else if (interaction.index === 'TR') setParams(p => ({ ...p, bR: mx, bT: my }));
-                        else if (interaction.index === 'BL') setParams(p => ({ ...p, bL: mx, bB: my }));
-                        else if (interaction.index === 'BR') setParams(p => ({ ...p, bR: mx, bB: my }));
-                    } else if (interaction.mode === 'boundaryCircleMove') {
-                        setParams(p => ({ ...p, bCX: mx, bCY: my }));
-                    } else if (interaction.mode === 'boundaryCircleSize') {
-                        setParams(p => ({ ...p, bRad: Math.max(5, Math.sqrt((mx - params.bCX)**2 + (my - params.bCY)**2)) }));
-                    } else if (interaction.mode === 'radialRadius') {
-                        setParams(p => ({ ...p, attractorRadius: Math.max(0, Math.sqrt(mx*mx + my*my)) }));
-                    } else if (interaction.mode === 'arrayBoundary') {
-                        const updated = [...params[interaction.splineKey]]; updated[interaction.index] = { x: mx, y: my };
-                        setParams(p => ({ ...p, [interaction.splineKey]: updated }));
-                    } else if (interaction.mode === 'attractor') {
-                        const key = attractorMode === 'curve' ? 'cvs' : 'linePts';
-                        const updated = [...params[key]]; updated[interaction.index] = { x: mx, y: my };
-                        setParams(p => ({ ...p, [key]: updated }));
-                    }
-                } else if (type === 'end') setInteraction({ active: false, mode: null, index: -1 });
-            };
-
-            const exportPNG = () => {
-                const canvas = canvasRef.current;
-                if (!canvas) return;
-                const link = document.createElement('a');
-                link.download = `Braun_Pattern_Lab_${Date.now()}.png`;
-                link.href = canvas.toDataURL('image/png', 1.0);
-                link.click();
-            };
-
-            const exportSVG = () => {
-                const { bL, bR, bT, bB, bCX, bCY, bRad, color, bgColor } = params;
-                const width = boundaryShape === 'rect' ? Math.abs(bR - bL) : bRad * 2;
-                const height = boundaryShape === 'rect' ? Math.abs(bB - bT) : bRad * 2;
-                const offX = boundaryShape === 'rect' ? -Math.min(bL, bR) : bRad - bCX;
-                const offY = boundaryShape === 'rect' ? -Math.min(bT, bB) : bRad - bCY;
-
-                let svgContent = `<svg width="${width}mm" height="${height}mm" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
-                svgContent += `<rect width="100%" height="100%" fill="${bgColor}"/>`;
-                svgContent += `<g transform="translate(${offX}, ${offY})">`;
-
+            // 產生所有可見圓點 {x, y, dia}；畫布、統計與 SVG 匯出共用
+            const collectDots = () => {
+                const dots = [];
                 const addDot = (x, y, bypassTrim = false) => {
                     if (!bypassTrim && !isInside(x, y)) return;
-                    const dia = calculateDotSize(x, y);
-                    svgContent += `<circle cx="${x.toFixed(3)}" cy="${y.toFixed(3)}" r="${(dia/2).toFixed(3)}" fill="${color}"/>`;
+                    dots.push({ x, y, dia: calculateDotSize(x, y) });
                 };
 
                 if (patternType === 'grid' || patternType === 'hexagonal') {
-                    const vStep = patternType === 'hexagonal' ? params.spacingY * 0.866 : params.spacingY;
-                    for (let r = -50; r <= 50; r++) {
-                        const offset = (patternType === 'hexagonal' && r % 2 !== 0) ? params.spacingX * params.stagger : 0;
-                        for (let c = -50; c <= 50; c++) addDot(c * params.spacingX + offset, r * vStep);
+                    const hex = patternType === 'hexagonal';
+                    const vStep = hex ? params.spacingY * 0.866 : params.spacingY;
+                    const x0 = -(params.gridCols - 1) / 2 * params.spacingX;
+                    for (let j = 0; j < params.gridRows; j++) {
+                        const y = (j - (params.gridRows - 1) / 2) * vStep;
+                        const stagger = hex && j % 2 !== 0 ? params.stagger : 0;
+                        if (trimTarget === 'curves') {
+                            // 只在格線與邊界相交的區段內佈點，兩端貼齊邊界
+                            insideRuns(x => isInside(x, y), x0, -x0).forEach(seg => spread(seg.s, seg.e, params.spacingX, stagger, x => addDot(x, y, true)));
+                        } else {
+                            for (let c = 0; c < params.gridCols; c++) addDot(x0 + (c + stagger) * params.spacingX, y);
+                        }
                     }
                 } else if (patternType === 'radial') {
                     const rot = (params.rotation * Math.PI) / 180;
                     for (let r = 1; r <= params.gridRows; r++) {
                         const rad = r * params.spacingY;
                         const fullCount = Math.max(params.mirrorCount, Math.round((2 * Math.PI * rad / params.spacingX) / params.mirrorCount) * params.mirrorCount);
+                        const ringDot = (a) => addDot(rad * Math.cos(a), rad * Math.sin(a), trimTarget === 'curves');
                         if (trimTarget === 'curves') {
-                            let segments = []; let active = null;
-                            for (let i = 0; i <= 720; i++) {
-                                const a = (i/720) * Math.PI * 2;
-                                if (isInside(rad * Math.cos(a), rad * Math.sin(a))) {
-                                    if (!active) { active = { s: a, e: a }; segments.push(active); } else active.e = a;
-                                } else active = null;
+                            const t0 = rot; const t1 = rot + Math.PI * 2;
+                            const segments = insideRuns(a => isInside(rad * Math.cos(a), rad * Math.sin(a)), t0, t1, 720);
+                            const fullRing = segments.length === 1 && segments[0].s === t0 && segments[0].e === t1;
+                            if (!fullRing) {
+                                if (segments.length > 1 && segments[0].s === t0 && segments[segments.length-1].e === t1) segments[0].s = segments.pop().s - Math.PI*2;
+                                segments.forEach(seg => spread(seg.s, seg.e, (Math.PI * 2) / fullCount, 0, ringDot));
+                                continue;
                             }
-                            if (segments.length > 1 && isInside(rad * Math.cos(0), rad * Math.sin(0))) { segments[0].s = segments[segments.length-1].s - Math.PI*2; segments.pop(); }
-                            segments.forEach(seg => {
-                                const count = Math.max(2, Math.round(fullCount * ((seg.e - seg.s) / (Math.PI*2))));
-                                for (let i = 0; i < count; i++) {
-                                    const a = seg.s + (i / (count-1)) * (seg.e - seg.s) + rot;
-                                    addDot(rad * Math.cos(a), rad * Math.sin(a), true);
-                                }
-                            });
-                        } else {
-                            for (let i = 0; i < fullCount; i++) addDot(rad * Math.cos((i/fullCount)*Math.PI*2 + rot), rad * Math.sin((i/fullCount)*Math.PI*2 + rot));
                         }
+                        for (let i = 0; i < fullCount; i++) ringDot((i/fullCount)*Math.PI*2 + rot);
                     }
                 } else if (patternType === 'splineGrid') {
                     const nU = params.gridCols - 1; const nV = params.gridRows - 1;
                     for (let j = 0; j <= nV; j++) {
                         const v = j / nV;
                         const intermediatePts = params.boundarySplineA.map((pA, idx) => ({ x: pA.x * (1 - v) + params.boundarySplineB[idx].x * v, y: pA.y * (1 - v) + params.boundarySplineB[idx].y * v }));
-                        let range = trimTarget === 'curves' ? getTInsideRange(intermediatePts) : { start: 0, end: 1 };
-                        if (!range) continue;
+                        let range = { start: 0, end: 1 };
+                        if (trimTarget === 'curves') {
+                            const runs = insideRuns(t => { const p = getBezierPoint(t, intermediatePts); return isInside(p.x, p.y); }, 0, 1);
+                            if (!runs.length) continue;
+                            range = { start: runs[0].s, end: runs[runs.length - 1].e };
+                        }
                         for (let i = 0; i <= nU; i++) {
                             let u = i / nU;
                             if (trimTarget === 'curves') {
@@ -318,12 +308,214 @@
                         }
                     }
                 }
+                return dots;
+            };
+
+            const getImageRect = () => {
+                if (!bgImage) return null;
+                const w = params.bgWidth; const h = w * ((bgImage.height / bgImage.width) || 1);
+                return { x: params.bgOffsetX - w / 2, y: params.bgOffsetY - h / 2, w, h };
+            };
+
+            // 以 CSS 像素繪製整個場景；螢幕畫布與高解析 PNG 匯出共用
+            const drawScene = (ctx, w, h, dots) => {
+                const cx = w / 2 + params.panX; const cy = h / 2 + params.panY;
+                const zoom = params.viewZoom;
+                const handle = (x, y, color, r = 5, lw = 2) => {
+                    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(cx + x * zoom, cy + y * zoom, r, 0, Math.PI*2); ctx.fill();
+                    ctx.strokeStyle = 'white'; ctx.lineWidth = lw; ctx.stroke();
+                };
+
+                ctx.fillStyle = params.bgColor; ctx.fillRect(0, 0, w, h);
+
+                const img = getImageRect();
+                if (img) {
+                    ctx.save(); ctx.globalAlpha = params.bgOpacity;
+                    ctx.drawImage(bgImage, cx + img.x * zoom, cy + img.y * zoom, img.w * zoom, img.h * zoom);
+                    ctx.restore();
+                }
+
+                // 邊界
+                ctx.save(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
+                if (boundaryShape === 'rect') {
+                    ctx.strokeRect(cx + params.bL * zoom, cy + params.bT * zoom, (params.bR - params.bL) * zoom, (params.bB - params.bT) * zoom);
+                    [{ x: params.bL, y: params.bT }, { x: params.bR, y: params.bT }, { x: params.bL, y: params.bB }, { x: params.bR, y: params.bB }].forEach(c => handle(c.x, c.y, '#ef4444'));
+                } else if (boundaryShape === 'circle') {
+                    ctx.beginPath(); ctx.arc(cx + params.bCX * zoom, cy + params.bCY * zoom, params.bRad * zoom, 0, Math.PI*2); ctx.stroke();
+                    handle(params.bCX, params.bCY, '#ef4444');
+                    handle(params.bCX, params.bCY - params.bRad, '#ef4444');
+                } else {
+                    ctx.beginPath();
+                    params.quadPts.forEach((p, i) => i === 0 ? ctx.moveTo(cx + p.x * zoom, cy + p.y * zoom) : ctx.lineTo(cx + p.x * zoom, cy + p.y * zoom));
+                    ctx.closePath(); ctx.stroke();
+                    params.quadPts.forEach(p => handle(p.x, p.y, '#ef4444'));
+                }
+                ctx.restore();
+
+                // 網格與吸引子
+                if (patternType === 'splineGrid') {
+                    ctx.save(); [params.boundarySplineA, params.boundarySplineB].forEach((pts, idx) => {
+                        ctx.strokeStyle = idx === 0 ? '#f59e0b' : '#d97706'; ctx.lineWidth = 2; ctx.beginPath();
+                        for (let t=0; t<=1; t+=0.02) { const p = getBezierPoint(t, pts); if (t === 0) ctx.moveTo(cx + p.x * zoom, cy + p.y * zoom); else ctx.lineTo(cx + p.x * zoom, cy + p.y * zoom); }
+                        ctx.stroke();
+                        pts.forEach(p => handle(p.x, p.y, idx === 0 ? '#f59e0b' : '#d97706', 5, 1.5));
+                    }); ctx.restore();
+                }
+
+                ctx.save(); if (attractorMode !== 'none') {
+                    const color = attractorMode === 'curve' ? '#3b82f6' : attractorMode === 'line' ? LINE_COLOR : '#10b981';
+                    ctx.strokeStyle = color; ctx.lineWidth = 2;
+                    if (attractorMode === 'radial') {
+                        ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(cx, cy, params.attractorRadius * zoom, 0, Math.PI*2); ctx.stroke();
+                        ctx.setLineDash([]); handle(params.attractorRadius, 0, color, 6);
+                    } else if (attractorMode === 'curve' || attractorMode === 'line') {
+                        ctx.beginPath();
+                        const pts = attractorMode === 'curve' ? params.cvs : params.linePts;
+                        if (attractorMode === 'curve') for (let t=0; t<=1; t+=0.02) { const p = getBezierPoint(t, pts); if (t === 0) ctx.moveTo(cx + p.x * zoom, cy + p.y * zoom); else ctx.lineTo(cx + p.x * zoom, cy + p.y * zoom); }
+                        else { ctx.moveTo(cx + pts[0].x * zoom, cy + pts[0].y * zoom); ctx.lineTo(cx + pts[1].x * zoom, cy + pts[1].y * zoom); }
+                        ctx.stroke();
+                        pts.forEach(p => handle(p.x, p.y, color));
+                    }
+                } ctx.restore();
+
+                // 圓點
+                ctx.fillStyle = params.color;
+                dots.forEach(d => { ctx.beginPath(); ctx.arc(cx + d.x * zoom, cy + d.y * zoom, (d.dia / 2) * zoom, 0, Math.PI * 2); ctx.fill(); });
+
+                if (hoverHighlight !== 'none' && dots.length) {
+                    ctx.save();
+                    const pick = hoverHighlight === 'max' ? Math.max : Math.min;
+                    const target = dots.reduce((m, d) => pick(m, d.dia), dots[0].dia);
+                    ctx.strokeStyle = hoverHighlight === 'max' ? '#f97316' : '#3b82f6'; ctx.lineWidth = 3;
+                    dots.filter(d => Math.abs(d.dia - target) < 0.001).slice(0, 100).forEach(d => { ctx.beginPath(); ctx.arc(cx + d.x * zoom, cy + d.y * zoom, (d.dia/2)*zoom + 5, 0, Math.PI*2); ctx.stroke(); });
+                    ctx.restore();
+                }
+
+                // 參考圖外框與縮放把手
+                if (img) {
+                    ctx.save(); ctx.strokeStyle = IMAGE_COLOR; ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
+                    ctx.strokeRect(cx + img.x * zoom, cy + img.y * zoom, img.w * zoom, img.h * zoom);
+                    ctx.setLineDash([]); handle(img.x + img.w, img.y + img.h, IMAGE_COLOR, 6);
+                    ctx.restore();
+                }
+            };
+
+            const toWorld = (e) => {
+                const rect = canvasRef.current.getBoundingClientRect();
+                return {
+                    x: (e.clientX - rect.left - canvasDim.w / 2 - params.panX) / params.viewZoom,
+                    y: (e.clientY - rect.top - canvasDim.h / 2 - params.panY) / params.viewZoom
+                };
+            };
+
+            // 依優先序找出被抓取的把手：邊界 → 吸引子 → 陣列樣條 → 參考圖；都沒有則平移畫布
+            const hitTest = (m) => {
+                const near = (x, y) => dist(m.x, m.y, x, y) * params.viewZoom < HANDLE_RADIUS;
+                if (boundaryShape === 'rect') {
+                    const corners = [
+                        { id: 'TL', x: params.bL, y: params.bT }, { id: 'TR', x: params.bR, y: params.bT },
+                        { id: 'BL', x: params.bL, y: params.bB }, { id: 'BR', x: params.bR, y: params.bB }
+                    ];
+                    for (let c of corners) if (near(c.x, c.y)) return { mode: 'boundaryCorner', index: c.id };
+                } else if (boundaryShape === 'circle') {
+                    if (near(params.bCX, params.bCY)) return { mode: 'boundaryCircleMove' };
+                    if (near(params.bCX, params.bCY - params.bRad)) return { mode: 'boundaryCircleSize' };
+                } else {
+                    for (let i = 0; i < 4; i++) if (near(params.quadPts[i].x, params.quadPts[i].y)) return { mode: 'points', key: 'quadPts', index: i };
+                }
+                if (attractorMode === 'radial' && near(params.attractorRadius, 0)) return { mode: 'radialRadius' };
+                if (patternType === 'splineGrid') {
+                    for (let key of ['boundarySplineA', 'boundarySplineB']) {
+                        for (let i = 0; i < 4; i++) if (near(params[key][i].x, params[key][i].y)) return { mode: 'points', key, index: i };
+                    }
+                }
+                const attrKey = attractorMode === 'curve' ? 'cvs' : attractorMode === 'line' ? 'linePts' : null;
+                if (attrKey) {
+                    for (let i = 0; i < params[attrKey].length; i++) if (near(params[attrKey][i].x, params[attrKey][i].y)) return { mode: 'points', key: attrKey, index: i };
+                }
+                const img = getImageRect();
+                if (img && near(img.x + img.w, img.y + img.h)) return { mode: 'imageScale', left: img.x, top: img.y };
+                if (boundaryShape === 'circle' && Math.abs(dist(m.x, m.y, params.bCX, params.bCY) - params.bRad) * params.viewZoom < HANDLE_RADIUS / 2) return { mode: 'boundaryCircleSize' };
+                if (img && m.x >= img.x && m.x <= img.x + img.w && m.y >= img.y && m.y <= img.y + img.h) return { mode: 'imageMove', start: m, startX: params.bgOffsetX, startY: params.bgOffsetY };
+                return null;
+            };
+
+            const onPointerDown = (e) => {
+                if (!canvasRef.current || (e.button !== 0 && e.button !== 1)) return;
+                e.preventDefault();
+                const hit = e.button === 0 ? hitTest(toWorld(e)) : null;
+                const drag = hit || { mode: 'canvasPan', startX: e.clientX, startY: e.clientY, panX: params.panX, panY: params.panY };
+                dragRef.current = drag;
+                setDragMode(drag.mode);
+                e.currentTarget.setPointerCapture(e.pointerId);
+            };
+
+            const onPointerMove = (e) => {
+                const drag = dragRef.current;
+                if (!drag) return;
+                if (drag.mode === 'canvasPan') {
+                    setParams(p => ({ ...p, panX: drag.panX + e.clientX - drag.startX, panY: drag.panY + e.clientY - drag.startY }));
+                    return;
+                }
+                const { x: mx, y: my } = toWorld(e);
+                if (drag.mode === 'boundaryCorner') {
+                    if (drag.index === 'TL') setParams(p => ({ ...p, bL: mx, bT: my }));
+                    else if (drag.index === 'TR') setParams(p => ({ ...p, bR: mx, bT: my }));
+                    else if (drag.index === 'BL') setParams(p => ({ ...p, bL: mx, bB: my }));
+                    else if (drag.index === 'BR') setParams(p => ({ ...p, bR: mx, bB: my }));
+                } else if (drag.mode === 'boundaryCircleMove') {
+                    setParams(p => ({ ...p, bCX: mx, bCY: my }));
+                } else if (drag.mode === 'boundaryCircleSize') {
+                    setParams(p => ({ ...p, bRad: Math.max(5, dist(mx, my, p.bCX, p.bCY)) }));
+                } else if (drag.mode === 'radialRadius') {
+                    setParams(p => ({ ...p, attractorRadius: Math.max(0, Math.sqrt(mx*mx + my*my)) }));
+                } else if (drag.mode === 'points') {
+                    setParams(p => { const updated = [...p[drag.key]]; updated[drag.index] = { x: mx, y: my }; return { ...p, [drag.key]: updated }; });
+                } else if (drag.mode === 'imageScale') {
+                    // 固定左上角，拖曳右下把手縮放（維持比例）
+                    const aspect = (bgImage.height / bgImage.width) || 1;
+                    const width = Math.max(5, mx - drag.left, (my - drag.top) / aspect);
+                    setParams(p => ({ ...p, bgWidth: width, bgOffsetX: drag.left + width / 2, bgOffsetY: drag.top + width * aspect / 2 }));
+                } else if (drag.mode === 'imageMove') {
+                    setParams(p => ({ ...p, bgOffsetX: drag.startX + mx - drag.start.x, bgOffsetY: drag.startY + my - drag.start.y }));
+                }
+            };
+
+            const onPointerUp = () => { dragRef.current = null; setDragMode(null); };
+
+            const exportPNG = () => {
+                if (canvasDim.w === 0) return;
+                // 以至少 3 倍解析度重繪（上限約 40MP），而非直接擷取螢幕畫布
+                const scale = Math.min(Math.max(3, window.devicePixelRatio || 1), Math.sqrt(40e6 / (canvasDim.w * canvasDim.h)));
+                const off = document.createElement('canvas');
+                off.width = Math.round(canvasDim.w * scale); off.height = Math.round(canvasDim.h * scale);
+                const ctx = off.getContext('2d', { alpha: false });
+                ctx.setTransform(scale, 0, 0, scale, 0, 0);
+                drawScene(ctx, canvasDim.w, canvasDim.h, collectDots());
+                const link = document.createElement('a');
+                link.download = `Braun_Pattern_Lab_${Date.now()}.png`;
+                link.href = off.toDataURL('image/png');
+                link.click();
+            };
+
+            const exportSVG = () => {
+                const { color, bgColor } = params;
+                const b = getBounds();
+                const width = +(b.maxX - b.minX).toFixed(3); const height = +(b.maxY - b.minY).toFixed(3);
+
+                let svgContent = `<svg width="${width}mm" height="${height}mm" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
+                svgContent += `<rect width="100%" height="100%" fill="${bgColor}"/>`;
+                svgContent += `<g transform="translate(${+(-b.minX).toFixed(3)}, ${+(-b.minY).toFixed(3)})">`;
+                collectDots().forEach(d => {
+                    svgContent += `<circle cx="${d.x.toFixed(3)}" cy="${d.y.toFixed(3)}" r="${(d.dia/2).toFixed(3)}" fill="${color}"/>`;
+                });
                 svgContent += `</g></svg>`;
                 const blob = new Blob([svgContent], { type: 'image/svg+xml' });
                 const link = document.createElement('a');
                 link.download = `Braun_Pattern_Lab_${Date.now()}.svg`;
                 link.href = URL.createObjectURL(blob);
                 link.click();
+                setTimeout(() => URL.revokeObjectURL(link.href), 1000);
             };
 
             useLayoutEffect(() => {
@@ -334,151 +526,30 @@
                 return () => obs.disconnect();
             }, []);
 
+            const dpr = window.devicePixelRatio || 1;
+
             useEffect(() => {
                 const canvas = canvasRef.current;
                 if (!canvas || canvasDim.w === 0) return;
                 const ctx = canvas.getContext('2d', { alpha: false });
-                const { w, h } = canvasDim;
-                const cx = w / 2 + params.panX; const cy = h / 2 + params.panY;
-                const zoom = params.viewZoom;
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                const dots = collectDots();
+                drawScene(ctx, canvasDim.w, canvasDim.h, dots);
 
-                ctx.fillStyle = params.bgColor; ctx.fillRect(0, 0, w, h);
-
-                if (bgImage) {
-                    ctx.save(); ctx.globalAlpha = params.bgOpacity;
-                    const aspect = bgImage.height / bgImage.width;
-                    const bw = params.bgWidth * zoom; const bh = bw * aspect;
-                    const bx = cx + params.bgOffsetX * zoom - bw / 2; const by = cy + params.bgOffsetY * zoom - bh / 2;
-                    ctx.drawImage(bgImage, bx, by, bw, bh);
-                    ctx.restore();
-                }
-
-                // 邊界
-                ctx.save(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
-                if (boundaryShape === 'rect') {
-                    ctx.strokeRect(cx + params.bL * zoom, cy + params.bT * zoom, (params.bR - params.bL) * zoom, (params.bB - params.bT) * zoom);
-                    [{ x: params.bL, y: params.bT }, { x: params.bR, y: params.bT }, { x: params.bL, y: params.bB }, { x: params.bR, y: params.bB }].forEach(c => {
-                        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(cx + c.x * zoom, cy + c.y * zoom, 5, 0, Math.PI*2); ctx.fill();
-                        ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
-                    });
-                } else {
-                    ctx.beginPath(); ctx.arc(cx + params.bCX * zoom, cy + params.bCY * zoom, params.bRad * zoom, 0, Math.PI*2); ctx.stroke();
-                    ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(cx + params.bCX * zoom, cy + params.bCY * zoom, 5, 0, Math.PI*2); ctx.fill();
-                    ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
-                    ctx.beginPath(); ctx.arc(cx + params.bCX * zoom, cy + (params.bCY - params.bRad) * zoom, 5, 0, Math.PI*2); ctx.fill();
-                    ctx.stroke();
-                }
-                ctx.restore();
-
-                // 網格與吸引子
-                if (patternType === 'splineGrid') {
-                    ctx.save(); [params.boundarySplineA, params.boundarySplineB].forEach((pts, idx) => {
-                        ctx.strokeStyle = idx === 0 ? '#f59e0b' : '#d97706'; ctx.lineWidth = 2; ctx.beginPath();
-                        for (let t=0; t<=1; t+=0.02) { const p = getBezierPoint(t, pts); if (t === 0) ctx.moveTo(cx + p.x * zoom, cy + p.y * zoom); else ctx.lineTo(cx + p.x * zoom, cy + p.y * zoom); }
-                        ctx.stroke();
-                        pts.forEach(p => { ctx.fillStyle = idx === 0 ? '#f59e0b' : '#d97706'; ctx.beginPath(); ctx.arc(cx + p.x * zoom, cy + p.y * zoom, 5, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = 'white'; ctx.lineWidth = 1.5; ctx.stroke(); });
-                    }); ctx.restore();
-                }
-
-                ctx.save(); if (attractorMode !== 'none') {
-                    const color = attractorMode === 'curve' ? '#3b82f6' : attractorMode === 'line' ? '#ef4444' : '#10b981';
-                    ctx.strokeStyle = color; ctx.lineWidth = 2;
-                    if (attractorMode === 'radial') {
-                        ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(cx, cy, params.attractorRadius * zoom, 0, Math.PI*2); ctx.stroke();
-                        ctx.setLineDash([]); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(cx + params.attractorRadius * zoom, cy, 6, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
-                    } else if (attractorMode === 'curve' || attractorMode === 'line') {
-                        ctx.beginPath();
-                        const pts = attractorMode === 'curve' ? params.cvs : params.linePts;
-                        if (attractorMode === 'curve') for (let t=0; t<=1; t+=0.02) { const p = getBezierPoint(t, pts); if (t === 0) ctx.moveTo(cx + p.x * zoom, cy + p.y * zoom); else ctx.lineTo(cx + p.x * zoom, cy + p.y * zoom); }
-                        else { ctx.moveTo(cx + pts[0].x * zoom, cy + pts[0].y * zoom); ctx.lineTo(cx + pts[1].x * zoom, cy + pts[1].y * zoom); }
-                        ctx.stroke();
-                        pts.forEach(p => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(cx + p.x * zoom, cy + p.y * zoom, 5, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke(); });
-                    }
-                } ctx.restore();
-
-                // 圓點
-                ctx.fillStyle = params.color;
-                let visibleCount = 0;
-                let minFound = Infinity, maxFound = -Infinity;
-                let minPoints = [], maxPoints = [];
-
-                const processDot = (x, y, bypassTrim = false) => {
-                    if (!bypassTrim && !isInside(x, y)) return;
-                    visibleCount++;
-                    const dia = calculateDotSize(x, y);
-                    if (dia < minFound) { minFound = dia; minPoints = [{x, y, dia}]; }
-                    else if (Math.abs(dia - minFound) < 0.001) minPoints.push({x, y, dia});
-                    if (dia > maxFound) { maxFound = dia; maxPoints = [{x, y, dia}]; }
-                    else if (Math.abs(dia - maxFound) < 0.001) maxPoints.push({x, y, dia});
-                    ctx.beginPath(); ctx.arc(cx + x * zoom, cy + y * zoom, (dia / 2) * zoom, 0, Math.PI * 2); ctx.fill();
-                };
-
-                if (patternType === 'grid' || patternType === 'hexagonal') {
-                    const vStep = patternType === 'hexagonal' ? params.spacingY * 0.866 : params.spacingY;
-                    for (let r = -50; r <= 50; r++) {
-                        const offset = (patternType === 'hexagonal' && r % 2 !== 0) ? params.spacingX * params.stagger : 0;
-                        for (let c = -50; c <= 50; c++) processDot(c * params.spacingX + offset, r * vStep);
-                    }
-                } else if (patternType === 'radial') {
-                    const rot = (params.rotation * Math.PI) / 180;
-                    for (let r = 1; r <= params.gridRows; r++) {
-                        const rad = r * params.spacingY;
-                        const fullCount = Math.max(params.mirrorCount, Math.round((2 * Math.PI * rad / params.spacingX) / params.mirrorCount) * params.mirrorCount);
-                        if (trimTarget === 'curves') {
-                            let segments = []; let active = null;
-                            for (let i = 0; i <= 720; i++) {
-                                const a = (i/720) * Math.PI * 2;
-                                if (isInside(rad * Math.cos(a), rad * Math.sin(a))) {
-                                    if (!active) { active = { s: a, e: a }; segments.push(active); } else active.e = a;
-                                } else active = null;
-                            }
-                            if (segments.length > 1 && isInside(rad * Math.cos(0), rad * Math.sin(0))) { segments[0].s = segments[segments.length-1].s - Math.PI*2; segments.pop(); }
-                            segments.forEach(seg => {
-                                const countForArc = Math.max(2, Math.round(fullCount * ((seg.e - seg.s) / (Math.PI*2))));
-                                for (let i = 0; i < countForArc; i++) {
-                                    const a = seg.s + (i / (countForArc-1)) * (seg.e - seg.s) + rot;
-                                    processDot(rad * Math.cos(a), rad * Math.sin(a), true);
-                                }
-                            });
-                        } else {
-                            for (let i = 0; i < fullCount; i++) processDot(rad * Math.cos((i/fullCount)*Math.PI*2 + rot), rad * Math.sin((i/fullCount)*Math.PI*2 + rot));
-                        }
-                    }
-                } else if (patternType === 'splineGrid') {
-                    const nU = params.gridCols - 1; const nV = params.gridRows - 1;
-                    for (let j = 0; j <= nV; j++) {
-                        const v = j / nV;
-                        const intermediatePts = params.boundarySplineA.map((pA, idx) => ({ x: pA.x * (1 - v) + params.boundarySplineB[idx].x * v, y: pA.y * (1 - v) + params.boundarySplineB[idx].y * v }));
-                        let range = trimTarget === 'curves' ? getTInsideRange(intermediatePts) : { start: 0, end: 1 };
-                        if (!range) continue;
-                        for (let i = 0; i <= nU; i++) {
-                            let u = i / nU;
-                            if (trimTarget === 'curves') {
-                                if (j % 2 !== 0 && i > 0 && i < nU) u = Math.min(0.999, Math.max(0.001, (i + params.stagger - 0.5) / nU));
-                                if (i === 0) u = 0; if (i === nU) u = 1;
-                            } else if (j % 2 !== 0) u = Math.min(1, Math.max(0, u + params.stagger * (1/nU)));
-                            const pF = getBezierPoint(range.start + u * (range.end - range.start), intermediatePts);
-                            processDot(pF.x, pF.y, trimTarget === 'curves');
-                        }
-                    }
-                }
-
-                if (hoverHighlight !== 'none') {
-                    ctx.save();
-                    const targets = hoverHighlight === 'max' ? maxPoints : minPoints;
-                    ctx.strokeStyle = hoverHighlight === 'max' ? '#f97316' : '#3b82f6'; ctx.lineWidth = 3;
-                    targets.slice(0, 100).forEach(d => { ctx.beginPath(); ctx.arc(cx + d.x * zoom, cy + d.y * zoom, (d.dia/2)*zoom + 5, 0, Math.PI*2); ctx.stroke(); });
-                    ctx.restore();
-                }
-
-                const areaVal = boundaryShape === 'rect' ? Math.abs((params.bR - params.bL) * (params.bB - params.bT)) : Math.PI * params.bRad**2;
+                // 開孔率：以每個孔的實際直徑計算孔面積總和
+                const areaVal = getArea();
+                const holeArea = dots.reduce((s, d) => s + Math.PI * (d.dia / 2)**2, 0);
+                const dias = dots.map(d => d.dia);
                 setStats({
-                    visibleDots: visibleCount,
-                    transparency: areaVal > 0 ? Math.round((visibleCount * Math.PI * (params.baseDiameter/2)**2) / areaVal * 100) : 0,
-                    minVal: minFound === Infinity ? 0 : minFound.toFixed(2),
-                    maxVal: maxFound === -Infinity ? 0 : maxFound.toFixed(2)
+                    visibleDots: dots.length,
+                    transparency: areaVal > 0 ? Math.round(holeArea / areaVal * 100) : 0,
+                    minVal: dots.length ? Math.min(...dias).toFixed(2) : 0,
+                    maxVal: dots.length ? Math.max(...dias).toFixed(2) : 0
                 });
-            }, [params, patternType, boundaryShape, attractorMode, trimTarget, canvasDim, hoverHighlight, bgImage]);
+            }, [params, patternType, boundaryShape, attractorMode, trimTarget, canvasDim, hoverHighlight, bgImage, dpr]);
+
+            const bounds = getBounds();
+            const boundW = round1(bounds.maxX - bounds.minX); const boundH = round1(bounds.maxY - bounds.minY);
 
             return (
                 <div className="flex flex-col h-full bg-[#f8f8f8] text-[#1a1a1a] overflow-hidden select-none">
@@ -526,15 +597,20 @@
                                         <ControlGroup label="X-Pitch" value={params.spacingX} min={1.5} max={30} step={0.5} onChange={v => setParams(p => ({...p, spacingX: parseFloat(v)}))} />
                                         <ControlGroup label="Y-Pitch" value={params.spacingY} min={1.5} max={30} step={0.5} onChange={v => setParams(p => ({...p, spacingY: parseFloat(v)}))} />
                                     </div>
-                                    <ControlGroup label={patternType === 'radial' ? "Rotation" : "Stagger"} value={patternType === 'radial' ? params.rotation : params.stagger} min={0} max={patternType === 'radial' ? 360 : 1} step={0.01} onChange={v => setParams(p => (patternType === 'radial' ? {...p, rotation: parseFloat(v)} : {...p, stagger: parseFloat(v)}))} />
+                                    {patternType !== 'grid' && <ControlGroup label={patternType === 'radial' ? "Rotation" : "Stagger"} value={patternType === 'radial' ? params.rotation : params.stagger} min={0} max={patternType === 'radial' ? 360 : 1} step={0.01} onChange={v => setParams(p => (patternType === 'radial' ? {...p, rotation: parseFloat(v)} : {...p, stagger: parseFloat(v)}))} />}
                                     {patternType === 'radial' && <ControlGroup label="Mirror Array" value={params.mirrorCount} min={1} max={32} step={1} onChange={v => setParams(p => ({...p, mirrorCount: parseInt(v)}))} colorClass="text-emerald-600" />}
                                 </section>
                                 <section className="space-y-4 text-zinc-800">
                                     <h2 className="text-[10px] font-black uppercase text-gray-400 border-b pb-1">5. Trimming Boundary</h2>
                                     <div className="flex gap-2">
-                                        <button onClick={() => setBoundaryShape('rect')} className={`flex-1 py-2 text-[9px] font-black rounded border ${boundaryShape === 'rect' ? 'bg-black text-white shadow-md' : 'bg-white text-zinc-300'}`}>RECT</button>
-                                        <button onClick={() => setBoundaryShape('circle')} className={`flex-1 py-2 text-[9px] font-black rounded border ${boundaryShape === 'circle' ? 'bg-black text-white shadow-md' : 'bg-white text-zinc-300'}`}>CIRCLE</button>
+                                        {BOUNDARY_SHAPES.map(s => (<button key={s} onClick={() => setBoundaryShape(s)} className={`flex-1 py-2 text-[9px] font-black uppercase rounded border ${boundaryShape === s ? 'bg-black text-white shadow-md' : 'bg-white text-zinc-300'}`}>{s}</button>))}
                                     </div>
+                                    {boundaryShape === 'circle'
+                                        ? <ControlGroup label="Diameter" value={boundW} min={5} max={600} step={0.5} onChange={v => resizeBoundary('w', parseFloat(v))} colorClass="text-red-500" />
+                                        : <div className="grid grid-cols-2 gap-4">
+                                            <ControlGroup label="Width" value={boundW} min={5} max={600} step={0.5} onChange={v => resizeBoundary('w', parseFloat(v))} colorClass="text-red-500" />
+                                            <ControlGroup label="Height" value={boundH} min={5} max={600} step={0.5} onChange={v => resizeBoundary('h', parseFloat(v))} colorClass="text-red-500" />
+                                        </div>}
                                     <div className="p-3 bg-zinc-50 rounded-lg border border-black/5 flex gap-1">
                                         <button onClick={() => setTrimTarget('dots')} className={`flex-1 py-1.5 text-[8px] font-black rounded uppercase transition-all ${trimTarget === 'dots' ? 'bg-zinc-800 text-white shadow-sm' : 'bg-white text-zinc-300 border'}`}>Trim Dots</button>
                                         <button onClick={() => setTrimTarget('curves')} className={`flex-1 py-1.5 text-[8px] font-black rounded uppercase transition-all ${trimTarget === 'curves' ? 'bg-zinc-800 text-white shadow-sm' : 'bg-white text-zinc-300 border'}`}>Trim Curves</button>
@@ -546,8 +622,12 @@
                                 </div>
                             </div>
                         </aside>
-                        <section ref={containerRef} className="flex-1 relative bg-[#eee] overflow-hidden canvas-container" onMouseMove={e => handleInteraction(e, 'move')} onMouseUp={e => handleInteraction(e, 'end')} onWheel={onWheel}>
-                            {canvasDim.w > 0 && <canvas ref={canvasRef} width={canvasDim.w} height={canvasDim.h} onMouseDown={e => handleInteraction(e, 'start')} className={`block mx-auto ${interaction.mode === 'canvasPan' ? 'cursor-grabbing' : 'cursor-crosshair'}`} />}
+                        <section ref={containerRef} className="flex-1 relative bg-[#eee] overflow-hidden canvas-container">
+                            {canvasDim.w > 0 && <canvas ref={canvasRef} width={Math.round(canvasDim.w * dpr)} height={Math.round(canvasDim.h * dpr)} style={{ width: canvasDim.w, height: canvasDim.h }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} className={`block mx-auto ${dragMode === 'canvasPan' ? 'cursor-grabbing' : 'cursor-crosshair'}`} />}
+                            {trimTarget === 'curves' && <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-amber-500/90 backdrop-blur-md text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-2 pointer-events-none">
+                                <Icon name="scissors" size={12} />
+                                <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap">Trim Curves Active</span>
+                            </div>}
                             <div className="absolute bottom-6 left-6 right-6 flex flex-wrap items-end justify-between gap-4 pointer-events-none">
                                 <div className="flex flex-col gap-2">
                                     <div className="bg-black/80 backdrop-blur-md text-white px-4 py-2 rounded-xl border border-white/10 shadow-2xl flex items-center gap-4 pointer-events-auto">
@@ -559,7 +639,7 @@
                                 </div>
                                 <div className="bg-red-500/90 backdrop-blur-md text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3">
                                     <Icon name="maximize" size={16} />
-                                    <div className="flex flex-col"><span className="text-[8px] font-black uppercase tracking-widest opacity-70">Boundary Dimensions</span><span className="text-sm font-black font-mono leading-none">{boundaryShape === 'circle' ? `Ø ${(params.bRad*2).toFixed(1)}` : `${Math.abs(params.bR - params.bL).toFixed(1)} × ${Math.abs(params.bB - params.bT).toFixed(1)}`} mm</span></div>
+                                    <div className="flex flex-col"><span className="text-[8px] font-black uppercase tracking-widest opacity-70">Boundary Dimensions</span><span className="text-sm font-black font-mono leading-none">{boundaryShape === 'circle' ? `Ø ${boundW.toFixed(1)}` : `${boundW.toFixed(1)} × ${boundH.toFixed(1)}`} mm</span></div>
                                 </div>
                             </div>
                         </section>

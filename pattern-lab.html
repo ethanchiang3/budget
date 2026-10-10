@@ -1,41 +1,263 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>pattern LAB Pro v8.4</title>
-    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
-    <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>pattern LAB Pro v9.0</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500&display=swap">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        html, body { height: 100dvh; margin: 0; padding: 0; overflow: hidden; background-color: #f8f8f8; font-family: 'Inter', sans-serif; }
-        #root { height: 100%; }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #dcdcdc; border-radius: 10px; }
-        input[type="range"] { -webkit-appearance: none; background: transparent; width: 100%; }
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
-            background: #000; border: 2px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.3); margin-top: -7px;
+        /* Layout: control column on the left, drafting table on the right with a CAD status bar; analysis card pinned to the table's top-right */
+        :root {
+            --bg: #efefec;
+            --panel: #fafaf8;
+            --raised: #ffffff;
+            --fg: #171717;
+            --muted: #6b6b67;
+            --faint: #a3a39e;
+            --line: rgba(23, 23, 23, 0.08);
+            --line-strong: rgba(23, 23, 23, 0.17);
+            --tonal: rgba(23, 23, 23, 0.045);
+            --tonal-hover: rgba(23, 23, 23, 0.08);
+            --invert: #171717;
+            --on-invert: #fafaf8;
+            --ws: #e5e5e1;
+            --grid-minor: rgba(23, 23, 23, 0.05);
+            --grid-major: rgba(23, 23, 23, 0.1);
+            --ok: #2c7a4b;
+            --warn: #a8640a;
+            --bad: #c4372c;
+            --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.07);
+            --font-ui: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+            --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
         }
-        input[type="range"]::-webkit-slider-runnable-track { width: 100%; height: 2px; background: #eee; border-radius: 1px; }
-        .canvas-container { touch-action: none; user-select: none; position: relative; width: 100%; height: 100%; }
-        canvas { display: block; }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg: #0f0f10; --panel: #171718; --raised: #222224; --fg: #ebebe8; --muted: #9a9a95; --faint: #62625f;
+                --line: rgba(255, 255, 255, 0.07); --line-strong: rgba(255, 255, 255, 0.15); --tonal: rgba(255, 255, 255, 0.05); --tonal-hover: rgba(255, 255, 255, 0.09);
+                --invert: #ebebe8; --on-invert: #141415; --ws: #0b0b0c; --grid-minor: rgba(255, 255, 255, 0.035); --grid-major: rgba(255, 255, 255, 0.075);
+                --ok: #5ec48a; --warn: #e3a548; --bad: #ff6f61; --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 28px rgba(0, 0, 0, 0.45);
+                color-scheme: dark;
+            }
+        }
+        :root[data-theme="dark"] {
+            --bg: #0f0f10; --panel: #171718; --raised: #222224; --fg: #ebebe8; --muted: #9a9a95; --faint: #62625f;
+            --line: rgba(255, 255, 255, 0.07); --line-strong: rgba(255, 255, 255, 0.15); --tonal: rgba(255, 255, 255, 0.05); --tonal-hover: rgba(255, 255, 255, 0.09);
+            --invert: #ebebe8; --on-invert: #141415; --ws: #0b0b0c; --grid-minor: rgba(255, 255, 255, 0.035); --grid-major: rgba(255, 255, 255, 0.075);
+            --ok: #5ec48a; --warn: #e3a548; --bad: #ff6f61; --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 28px rgba(0, 0, 0, 0.45);
+            color-scheme: dark;
+        }
+
+        * { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; overflow: hidden; }
+        body { background: var(--bg); color: var(--fg); font: 400 13px/1.4 var(--font-ui); -webkit-font-smoothing: antialiased; }
+        #root { height: 100%; }
+        button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+        button:focus-visible, input:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--fg); }
+        .ic { display: inline-flex; flex-shrink: 0; }
+
+        .app { display: grid; grid-template-rows: 52px minmax(0, 1fr); height: 100%; }
+
+        /* 頂部列 */
+        .topbar { display: flex; align-items: center; gap: 4px; padding: 0 10px 0 16px; background: var(--panel); border-bottom: 1px solid var(--line); position: relative; z-index: 20; }
+        .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; min-width: 0; }
+        .brand-name { font-size: 14px; font-stretch: 125%; letter-spacing: 0.01em; white-space: nowrap; }
+        .brand-name b { font-weight: 800; }
+        .brand-ver { font: 500 10px var(--font-mono); color: var(--faint); border: 1px solid var(--line-strong); border-radius: 4px; padding: 1px 4px; }
+        .tb-sep { width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
+        .icon-btn { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; color: var(--muted); transition: background 0.15s, color 0.15s; }
+        .icon-btn:hover:not(:disabled), .icon-btn.on { background: var(--tonal-hover); color: var(--fg); }
+        .icon-btn:disabled { opacity: 0.3; cursor: default; }
+        .btn-primary { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px 0 14px; margin-left: 6px; border-radius: 8px; background: var(--invert); color: var(--on-invert); font-weight: 600; font-size: 12.5px; }
+        .btn-primary:hover { opacity: 0.88; }
+        .btn-ghost { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px; background: var(--tonal); color: var(--fg); font-size: 12px; font-weight: 500; }
+        .btn-ghost:hover { background: var(--tonal-hover); }
+
+        .menu-wrap { position: relative; }
+        .menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; width: 268px; padding: 6px; background: var(--raised); border-radius: 12px; box-shadow: 0 0 0 1px var(--line), var(--shadow); }
+        .menu button { width: 100%; display: grid; grid-template-columns: 18px 1fr; column-gap: 12px; row-gap: 1px; align-items: center; text-align: left; padding: 8px 10px; border-radius: 8px; color: var(--fg); }
+        .menu button:hover { background: var(--tonal-hover); }
+        .menu .m-icon { color: var(--muted); }
+        .menu .m-label { font-size: 12.5px; font-weight: 500; }
+        .menu .m-hint { grid-column: 2; font-size: 11px; color: var(--muted); }
+        .menu hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+
+        /* 控制面板 */
+        .main { display: grid; grid-template-columns: 316px minmax(0, 1fr); min-height: 0; }
+        .panel { min-height: 0; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+        .sec { border-bottom: 1px solid var(--line); }
+        .sec-head { width: 100%; display: flex; align-items: center; gap: 10px; padding: 14px 16px; text-align: left; color: var(--fg); }
+        .sec-head:hover { background: var(--tonal); }
+        .sec-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; }
+        .sec-sum { margin-left: auto; min-width: 0; font: 11px var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .chev { color: var(--faint); transition: transform 0.2s; }
+        .chev.up { transform: rotate(180deg); }
+        .sec-body { display: grid; gap: 16px; padding: 2px 16px 20px; }
+        .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+        .hint { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+        .legend { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 4px 1px 0; vertical-align: middle; }
+
+        .param { display: grid; gap: 4px; min-width: 0; }
+        .param-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+        .param-label { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+        .num { display: inline-flex; align-items: baseline; gap: 2px; font: 500 12px var(--font-mono); }
+        .num input { width: 6.5ch; padding: 1px 3px; text-align: right; font: inherit; color: var(--fg); background: transparent; border: 0; border-radius: 4px; font-variant-numeric: tabular-nums; }
+        .num input:hover { background: var(--tonal); }
+        .num input:focus { outline: none; background: var(--raised); box-shadow: 0 0 0 1px var(--line-strong); }
+        .num .unit { font-size: 10.5px; color: var(--faint); }
+
+        input[type=range] { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 18px; margin: 0; background: transparent; cursor: pointer; }
+        input[type=range]::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: linear-gradient(to right, var(--fg) var(--pct, 0%), var(--line-strong) var(--pct, 0%)); }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -6px; border-radius: 50%; background: var(--raised); border: 1.5px solid var(--fg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15); transition: transform 0.12s; }
+        input[type=range]:active::-webkit-slider-thumb { transform: scale(1.15); }
+        input[type=range]::-moz-range-track { height: 2px; border-radius: 1px; background: var(--line-strong); }
+        input[type=range]::-moz-range-progress { height: 2px; background: var(--fg); }
+        input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--raised); border: 1.5px solid var(--fg); }
+        input[type=range]:focus-visible { box-shadow: none; }
+        input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--fg); }
+
+        .seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 3px; background: var(--tonal); border-radius: 10px; }
+        .seg button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-height: 54px; padding: 6px 2px; border-radius: 8px; color: var(--muted); font-size: 10.5px; font-weight: 500; transition: background 0.15s, color 0.15s; }
+        .seg.inline button { flex-direction: row; min-height: 32px; gap: 6px; font-size: 11.5px; }
+        .seg button:hover { color: var(--fg); }
+        .seg button.on { background: var(--raised); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--line); }
+
+        .swatches { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+        .swatch { display: grid; justify-items: center; gap: 6px; padding: 4px 0; border-radius: 8px; font-size: 10.5px; color: var(--muted); }
+        .swatch .disc { width: 34px; height: 34px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--line-strong); }
+        .swatch.on { color: var(--fg); font-weight: 600; }
+        .swatch.on .disc { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--fg); }
+
+        /* 繪圖區 */
+        .stage { display: grid; grid-template-rows: minmax(0, 1fr) 34px; min-width: 0; min-height: 0; }
+        .table { position: relative; overflow: hidden; background: var(--ws); touch-action: none; user-select: none; -webkit-user-select: none; }
+        .table canvas { display: block; position: absolute; inset: 0; }
+        .overlay { position: absolute; z-index: 2; }
+        .view-pill { top: 12px; left: 12px; display: flex; gap: 6px; }
+        .pill { display: flex; gap: 2px; padding: 3px; background: var(--panel); border-radius: 9px; box-shadow: var(--shadow); }
+        .pill button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 7px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
+        .pill button.icon { width: 28px; padding: 0; justify-content: center; }
+        .pill button:hover:not(.on) { color: var(--fg); background: var(--tonal); }
+        .pill button.on { background: var(--invert); color: var(--on-invert); }
+        .trim-badge { top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; background: var(--invert); color: var(--on-invert); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; pointer-events: none; box-shadow: var(--shadow); }
+
+        .card { top: 12px; right: 12px; width: 236px; padding: 12px 14px; background: var(--panel); border-radius: 12px; box-shadow: var(--shadow); }
+        .card-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); }
+        .card-title { font-size: 10.5px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+        .card-sum { font: 500 11px var(--font-mono); color: var(--fg); }
+        .stats { display: grid; gap: 7px; margin: 12px 0 0; }
+        .stats div { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+        .stats dt { color: var(--muted); }
+        .stats dd { margin: 0; font: 500 12px var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+        .stats dd.warn { color: var(--warn); }
+        .hl { cursor: help; padding: 0 2px; border-radius: 3px; }
+        .hl:hover { background: var(--tonal-hover); }
+        .dfm { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; padding: 8px 10px; border-radius: 8px; font-size: 11.5px; line-height: 1.35; }
+        .dfm.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+        .dfm.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); cursor: help; }
+        .dfm .ic { margin-top: 1px; }
+
+        .statusbar { display: flex; align-items: center; gap: 16px; padding: 0 6px 0 14px; background: var(--panel); border-top: 1px solid var(--line); font: 11px var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; }
+        .coords { min-width: 22ch; white-space: pre; }
+        .scalebar { display: flex; align-items: center; gap: 6px; }
+        .scalebar i { display: block; height: 5px; border: 1px solid var(--muted); border-top: 0; }
+        .sb-dim { margin-left: auto; color: var(--fg); }
+        .zoom { display: flex; align-items: center; gap: 1px; }
+        .zoom .icon-btn { width: 26px; height: 26px; border-radius: 6px; }
+        .zoom span { min-width: 5.5ch; text-align: center; }
+
+        .toast { position: absolute; left: 50%; bottom: 14px; z-index: 5; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px; background: var(--invert); color: var(--on-invert); font-size: 12px; white-space: nowrap; box-shadow: var(--shadow); pointer-events: none; animation: toast-in 0.2s ease-out; }
+        @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 6px); } }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+        @media (max-width: 767px) {
+            .main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+            .stage { order: -1; }
+            .panel { max-height: 44dvh; border-right: 0; border-top: 1px solid var(--line); }
+            .brand-ver, .export-label, .coords, .scalebar { display: none; }
+            .topbar { padding-left: 12px; }
+            .tb-sep { margin: 0 2px; }
+            .card { width: auto; max-width: calc(100% - 24px); padding: 9px 12px; }
+            .view-pill { top: auto; bottom: 12px; }
+            .trim-badge { top: auto; bottom: 14px; left: auto; right: 12px; transform: none; }
+        }
     </style>
 </head>
 <body>
     <div id="root"></div>
+    <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useLayoutEffect } = React;
+        const { useState, useEffect, useRef, useLayoutEffect, useMemo } = React;
 
         // 常數定義
-        const FIELD_ICONS = { none: 'ban', radial: 'target', curve: 'spline', line: 'minus' };
-        const BOUNDARY_SHAPES = ['rect', 'circle', 'quad'];
-        const LINE_COLOR = '#eab308';
-        const IMAGE_COLOR = '#3b82f6';
+        const PATTERNS = [
+            { value: 'grid', label: 'Grid', icon: 'grid-3x3' }, { value: 'hexagonal', label: 'Hex', icon: 'hexagon' },
+            { value: 'radial', label: 'Radial', icon: 'circle-dot' }, { value: 'splineGrid', label: 'Spline', icon: 'waves' }
+        ];
+        const FIELDS = [
+            { value: 'none', label: 'None', icon: 'ban' }, { value: 'radial', label: 'Radial', icon: 'target' },
+            { value: 'curve', label: 'Curve', icon: 'spline' }, { value: 'line', label: 'Line', icon: 'minus' }
+        ];
+        const SHAPES = [
+            { value: 'rect', label: 'Rect', icon: 'rectangle-horizontal' }, { value: 'circle', label: 'Circle', icon: 'circle' }, { value: 'quad', label: 'Quad', icon: 'square-dashed' }
+        ];
+        const TRIMS = [{ value: 'dots', label: 'Trim dots' }, { value: 'curves', label: 'Trim curves', icon: 'scissors' }];
+        // 材質預覽：板材漸層、孔後襯底色、密度 (g/cm³) 用於估算重量
+        const FINISHES = {
+            aluminium: { label: 'Alu', name: 'Brushed aluminium', sheet: ['#e1e3e4', '#b3b7ba'], hole: '#18191b', density: 2.70 },
+            anodized: { label: 'Black', name: 'Black anodised aluminium', sheet: ['#4a4b4f', '#2a2b2e'], hole: '#09090a', density: 2.70 },
+            stainless: { label: 'Steel', name: 'Stainless steel', sheet: ['#d4d7d9', '#9da2a6'], hole: '#16171a', density: 8.00 },
+            brass: { label: 'Brass', name: 'Brass', sheet: ['#dfc98f', '#a98a45'], hole: '#1c1912', density: 8.50 },
+            powder: { label: 'White', name: 'White powder-coated steel', sheet: ['#f6f5f1', '#e0ded8'], hole: '#2b2b2b', density: 7.85 }
+        };
+        const COLORS = { boundary: '#ef4444', curve: '#3b82f6', line: '#eab308', radial: '#10b981', splineA: '#f59e0b', splineB: '#d97706', image: '#3b82f6' };
+        // claude.ai Artifact 的 downloads capability 接受的副檔名；其他格式打包成 zip
+        const SAVE_EXTS = ['gif', 'png', 'jpg', 'jpeg', 'webp', 'mp4', 'webm', 'txt', 'json', 'md', 'csv', 'html', 'svg', 'pdf', 'zip'];
+
+        const DEFAULT_DESIGN = {
+            patternType: 'splineGrid', boundaryShape: 'rect', attractorMode: 'radial', trimTarget: 'dots',
+            baseDiameter: 2.5, minDiameter: 0.5,
+            spacingX: 8.0, spacingY: 8.0, gridCols: 30, gridRows: 20, stagger: 0.5,
+            bL: -120, bR: 120, bT: -50, bB: 50,
+            bCX: 0, bCY: 0, bRad: 60,
+            quadPts: [ {x: -100, y: -50}, {x: 100, y: -50}, {x: 120, y: 50}, {x: -120, y: 50} ],
+            influenceRange: 35, attractorRadius: 60, falloff: 1.0,
+            rotation: 0, mirrorCount: 6,
+            cvs: [ {x: -50, y: -20}, {x: -20, y: 30}, {x: 15, y: -25}, {x: 50, y: 20} ],
+            linePts: [ {x: -60, y: 0}, {x: 60, y: 0} ],
+            boundarySplineA: [ {x: -150, y: -60}, {x: -60, y: -90}, {x: 40, y: -30}, {x: 150, y: -60} ],
+            boundarySplineB: [ {x: -150, y: 60}, {x: -60, y: 30}, {x: 60, y: 90}, {x: 150, y: 60} ],
+            bgWidth: 200, bgOffsetX: 0, bgOffsetY: 0, bgOpacity: 0.5,
+            bgColor: '#ffffff', color: '#1a1a1a',
+            thickness: 0.8, finish: 'aluminium'
+        };
+        const ENUMS = { patternType: PATTERNS, attractorMode: FIELDS, boundaryShape: SHAPES, trimTarget: TRIMS };
+
+        // 讀入的設計檔（或 localStorage）只取已知欄位並檢查型別，缺的補預設值
+        const sanitizeDesign = (raw) => {
+            const out = { ...DEFAULT_DESIGN };
+            if (!raw || typeof raw !== 'object') return out;
+            for (const k of Object.keys(DEFAULT_DESIGN)) {
+                const def = DEFAULT_DESIGN[k]; const v = raw[k];
+                if (Array.isArray(def)) {
+                    if (Array.isArray(v) && v.length === def.length && v.every(p => p && Number.isFinite(p.x) && Number.isFinite(p.y))) out[k] = v.map(p => ({ x: p.x, y: p.y }));
+                } else if (ENUMS[k]) {
+                    if (ENUMS[k].some(o => o.value === v)) out[k] = v;
+                } else if (k === 'finish') {
+                    if (FINISHES[v]) out[k] = v;
+                } else if (typeof v === typeof def && (typeof v !== 'number' || Number.isFinite(v))) out[k] = v;
+            }
+            return out;
+        };
+
+        const STORE_KEY = 'patternLab.v9';
+        const loadStore = () => { try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; } };
+        const saveStore = (data) => { try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch { /* 私密模式等情況下無法儲存，略過 */ } };
 
         // lucide 會把 <i> 換成 <svg>；放進 React 不管理內容的 span，卸載時才不會 removeChild 出錯
         const Icon = ({ name, size = 16, className = "" }) => {
@@ -45,32 +267,151 @@
                 ref.current.innerHTML = `<i data-lucide="${name}" style="width:${size}px;height:${size}px"></i>`;
                 window.lucide.createIcons();
             }, [name, size]);
-            return <span ref={ref} style={{ width: size, height: size }} className={`flex shrink-0 ${className}`}></span>;
+            return <span ref={ref} style={{ width: size, height: size }} className={`ic ${className}`}></span>;
         };
 
-        const ControlGroup = ({ label, value, min, max, step, onChange, dark, colorClass }) => (
-            <div className="space-y-1 group">
-                <div className="flex items-center justify-between">
-                    <label className={`text-[9px] font-black uppercase ${dark ? 'text-zinc-500' : 'text-zinc-400'} group-hover:text-blue-500 transition-colors`}>{label}</label>
-                    <span className={`text-[10px] font-mono font-black ${colorClass || (dark ? 'text-blue-400' : 'text-blue-600')}`}>{value}</span>
+        // 數值顯示：去掉多餘的 0
+        const fmt = (v, d = 2) => String(+(+v).toFixed(d));
+        const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+
+        // 可直接輸入精確數值的欄位；Enter 確認、Esc 取消、上下鍵微調（Shift ×10）
+        const NumberField = ({ id, value, onCommit, min, max, step, decimals, unit, label }) => {
+            const [draft, setDraft] = useState(null);
+            const cancelled = useRef(false);
+            const commit = () => {
+                if (draft !== null && !cancelled.current) {
+                    const v = parseFloat(draft);
+                    if (Number.isFinite(v)) onCommit(clamp(v, min, max));
+                }
+                cancelled.current = false;
+                setDraft(null);
+            };
+            const nudge = (dir, big) => {
+                const base = parseFloat(draft ?? value);
+                const next = clamp(+((Number.isFinite(base) ? base : value) + dir * step * (big ? 10 : 1)).toFixed(6), min, max);
+                onCommit(next); setDraft(fmt(next, decimals));
+            };
+            return (
+                <span className="num">
+                    <input id={id} aria-label={label} inputMode="decimal" value={draft ?? fmt(value, decimals)}
+                        onFocus={e => { setDraft(fmt(value, decimals)); e.target.select(); }}
+                        onChange={e => setDraft(e.target.value)} onBlur={commit}
+                        onKeyDown={e => {
+                            if (e.key === 'Enter') e.target.blur();
+                            else if (e.key === 'Escape') { cancelled.current = true; e.target.blur(); }
+                            else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); nudge(e.key === 'ArrowUp' ? 1 : -1, e.shiftKey); }
+                        }} />
+                    {unit && <span className="unit">{unit}</span>}
+                </span>
+            );
+        };
+
+        // 滑桿 + 精確輸入；typedMax 允許輸入超過滑桿範圍的值
+        const Param = ({ id, label, value, min, max, step, unit, decimals = 1, typedMax, onChange }) => (
+            <div className="param">
+                <div className="param-head">
+                    <label className="param-label" htmlFor={`${id}-range`}>{label}</label>
+                    <NumberField id={`${id}-num`} label={label} value={value} min={min} max={typedMax ?? max} step={step} decimals={decimals} unit={unit} onCommit={onChange} />
                 </div>
-                <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(e.target.value)} className={`${dark ? 'accent-blue-500' : 'accent-black'}`} />
+                <input id={`${id}-range`} type="range" min={min} max={max} step={step} value={clamp(value, min, max)}
+                    style={{ '--pct': `${(clamp(value, min, max) - min) / (max - min) * 100}%` }}
+                    onChange={e => onChange(parseFloat(e.target.value))} />
             </div>
         );
 
+        const Segmented = ({ options, value, onChange, label, inline }) => (
+            <div className={`seg ${inline ? 'inline' : ''}`} role="radiogroup" aria-label={label}>
+                {options.map(o => (
+                    <button key={o.value} role="radio" aria-checked={value === o.value} className={value === o.value ? 'on' : ''} onClick={() => onChange(o.value)}>
+                        {o.icon && <Icon name={o.icon} size={inline ? 14 : 17} />}<span>{o.label}</span>
+                    </button>
+                ))}
+            </div>
+        );
+
+        const Section = ({ icon, title, summary, open, onToggle, children }) => (
+            <section className="sec">
+                <button className="sec-head" aria-expanded={open} onClick={onToggle}>
+                    <Icon name={icon} size={15} />
+                    <span className="sec-title">{title}</span>
+                    <span className="sec-sum">{summary}</span>
+                    <Icon name="chevron-down" size={14} className={`chev ${open ? 'up' : ''}`} />
+                </button>
+                {open && <div className="sec-body">{children}</div>}
+            </section>
+        );
+
+        const Menu = ({ id, icon, label, labelClass, primary, title, open, onToggle, items }) => (
+            <div className="menu-wrap">
+                <button className={primary ? 'btn-primary' : `icon-btn ${open ? 'on' : ''}`} title={title} aria-haspopup="menu" aria-expanded={open} onClick={onToggle}>
+                    <Icon name={icon} size={16} />
+                    {label && <span className={labelClass}>{label}</span>}
+                    {primary && <Icon name="chevron-down" size={14} />}
+                </button>
+                {open && <div className="menu" role="menu" id={id}>
+                    {items.map((it, i) => it === '-' ? <hr key={i} /> : (
+                        <button key={it.label} role="menuitem" onClick={it.onClick}>
+                            <Icon name={it.icon} size={16} className="m-icon" /><span className="m-label">{it.label}</span>
+                            {it.hint && <span className="m-hint">{it.hint}</span>}
+                        </button>
+                    ))}
+                </div>}
+            </div>
+        );
+
+        // 標誌：3×3 由中心向外漸小的穿孔
+        const Logo = () => (
+            <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+                <rect width="26" height="26" rx="6" style={{ fill: 'var(--invert)' }} />
+                {[0, 1, 2].flatMap(r => [0, 1, 2].map(c => {
+                    const d = Math.hypot(r - 1, c - 1);
+                    return <circle key={`${r}${c}`} cx={7 + c * 6} cy={7 + r * 6} r={2.4 - d * 0.75} style={{ fill: 'var(--on-invert)' }} />;
+                }))}
+            </svg>
+        );
+
         // 在 claude.ai Artifact 內頁面無法自行下載，改用 downloads capability；其他環境照常以連結下載
+        const crcTable = (() => {
+            const t = new Uint32Array(256);
+            for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+            return t;
+        })();
+        // 單檔、不壓縮 (store) 的 zip
+        const zipStore = (name, bytes) => {
+            let crc = 0xFFFFFFFF;
+            for (let i = 0; i < bytes.length; i++) crc = crcTable[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+            crc = (crc ^ 0xFFFFFFFF) >>> 0;
+            const nameBytes = new TextEncoder().encode(name);
+            const local = new DataView(new ArrayBuffer(30));
+            local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(12, 0x21, true);
+            local.setUint32(14, crc, true); local.setUint32(18, bytes.length, true); local.setUint32(22, bytes.length, true); local.setUint16(26, nameBytes.length, true);
+            const central = new DataView(new ArrayBuffer(46));
+            central.setUint32(0, 0x02014b50, true); central.setUint16(4, 20, true); central.setUint16(6, 20, true); central.setUint16(14, 0x21, true);
+            central.setUint32(16, crc, true); central.setUint32(20, bytes.length, true); central.setUint32(24, bytes.length, true); central.setUint16(28, nameBytes.length, true);
+            const end = new DataView(new ArrayBuffer(22));
+            end.setUint32(0, 0x06054b50, true); end.setUint16(8, 1, true); end.setUint16(10, 1, true);
+            end.setUint32(12, 46 + nameBytes.length, true); end.setUint32(16, 30 + nameBytes.length + bytes.length, true);
+            return new Blob([local, nameBytes, bytes, central, nameBytes, end], { type: 'application/zip' });
+        };
+
+        // 回傳 'saved' | 'declined' | 錯誤訊息
         const saveFile = async (filename, blob) => {
             const downloads = window.claude?.use ? await window.claude.use('downloads') : null;
             if (downloads) {
-                try { await downloads.save({ filename, data: blob }); }
-                catch (err) { if (err?.code !== 'declined') console.warn('Save failed:', err?.message || err); }
-                return;
+                let name = filename; let data = blob;
+                if (!SAVE_EXTS.includes(filename.split('.').pop().toLowerCase())) {
+                    data = zipStore(filename, new Uint8Array(await blob.arrayBuffer()));
+                    name = filename.replace(/\.[^.]+$/, '') + '.zip';
+                }
+                try { await downloads.save({ filename: name, data }); return 'saved'; }
+                catch (err) { return err?.code === 'declined' ? 'declined' : (err?.message || 'unknown error'); }
             }
             const link = document.createElement('a');
             link.download = filename;
             link.href = URL.createObjectURL(blob);
             link.click();
             setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+            return 'saved';
         };
 
         const dataURLToBlob = (url) => {
@@ -134,49 +475,116 @@
             for (let i = 0; i < n; i++) { const t = s + (i + offset) * step; if (t <= e + 1e-9) place(t); }
         };
 
+        // 每個孔與最近鄰孔之間的料寬 (web)；以空間網格加速
+        const nearestWebs = (dots) => {
+            const n = dots.length; const webs = new Float64Array(n).fill(Infinity);
+            if (n < 2) return webs;
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, maxD = 0;
+            dots.forEach(d => { minX = Math.min(minX, d.x); maxX = Math.max(maxX, d.x); minY = Math.min(minY, d.y); maxY = Math.max(maxY, d.y); maxD = Math.max(maxD, d.dia); });
+            const cell = Math.max(maxD, 2 * Math.sqrt(Math.max((maxX - minX) * (maxY - minY), 1) / n), 0.5);
+            const grid = new Map();
+            const key = (gx, gy) => gx + ',' + gy;
+            dots.forEach((d, i) => { const k = key(Math.floor(d.x / cell), Math.floor(d.y / cell)); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(i); });
+            dots.forEach((d, i) => {
+                const gx = Math.floor(d.x / cell), gy = Math.floor(d.y / cell);
+                for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+                    const list = grid.get(key(gx + ox, gy + oy));
+                    if (!list) continue;
+                    for (const j of list) {
+                        if (j <= i) continue;
+                        const o = dots[j];
+                        const web = dist(d.x, d.y, o.x, o.y) - (d.dia + o.dia) / 2;
+                        if (web < webs[i]) webs[i] = web;
+                        if (web < webs[j]) webs[j] = web;
+                    }
+                }
+            });
+            return webs;
+        };
+
+        // 比例尺長度：讓比例尺約 60–120px
+        const niceLength = (zoom) => {
+            const target = 80 / zoom; const pow = 10 ** Math.floor(Math.log10(target));
+            return [1, 2, 5, 10].map(m => m * pow).find(v => v * zoom >= 60) || 10 * pow;
+        };
+
         const App = () => {
             const HANDLE_RADIUS = 25;
             const canvasRef = useRef(null);
-            const containerRef = useRef(null);
+            const tableRef = useRef(null);
             const fileInputRef = useRef(null);
+            const designInputRef = useRef(null);
+            const coordsRef = useRef(null);
             const dragRef = useRef(null);
+            const pointersRef = useRef(new Map());
+            const fittedRef = useRef(false);
 
-            const [patternType, setPatternType] = useState('splineGrid');
-            const [boundaryShape, setBoundaryShape] = useState('rect');
-            const [attractorMode, setAttractorMode] = useState('radial');
-            const [trimTarget, setTrimTarget] = useState('dots');
-            const [hoverHighlight, setHoverHighlight] = useState('none');
+            const [stored] = useState(loadStore);
+            const [params, setParams] = useState(() => sanitizeDesign(stored.design));
+            const [view, setView] = useState(() => ({ zoom: 4, panX: 0, panY: 0, mode: stored.mode === 'material' ? 'material' : 'drawing', guides: stored.guides !== false }));
+            const [openSections, setOpenSections] = useState(() => ({ array: true, holes: true, boundary: true, material: false, reference: true, ...(stored.sections || {}) }));
+            const [cardOpen, setCardOpen] = useState(() => window.innerWidth >= 768);
             const [bgImage, setBgImage] = useState(null);
             const [canvasDim, setCanvasDim] = useState({ w: 0, h: 0 });
             const [dragMode, setDragMode] = useState(null);
+            const [hoverHighlight, setHoverHighlight] = useState('none');
+            const [menu, setMenu] = useState(null);
+            const [toast, setToast] = useState(null);
+            const [themeTick, setThemeTick] = useState(0);
+            const [, setHistTick] = useState(0);
 
-            const [params, setParams] = useState({
-                baseDiameter: 2.5,
-                minDiameter: 0.5,
-                spacingX: 8.0,
-                spacingY: 8.0,
-                gridCols: 30,
-                gridRows: 20,
-                stagger: 0.5,
-                bL: -120, bR: 120, bT: -50, bB: 50,
-                bCX: 0, bCY: 0, bRad: 60,
-                quadPts: [ {x: -100, y: -50}, {x: 100, y: -50}, {x: 120, y: 50}, {x: -120, y: 50} ],
-                influenceRange: 35,
-                attractorRadius: 60,
-                falloff: 1.0,
-                rotation: 0,
-                mirrorCount: 6,
-                viewZoom: 4,
-                panX: 0, panY: 0,
-                cvs: [ {x: -50, y: -20}, {x: -20, y: 30}, {x: 15, y: -25}, {x: 50, y: 20} ],
-                linePts: [ {x: -60, y: 0}, {x: 60, y: 0} ],
-                boundarySplineA: [ {x: -150, y: -60}, {x: -60, y: -90}, {x: 40, y: -30}, {x: 150, y: -60} ],
-                boundarySplineB: [ {x: -150, y: 60}, {x: -60, y: 30}, {x: 60, y: 90}, {x: 150, y: 60} ],
-                bgWidth: 200, bgOffsetX: 0, bgOffsetY: 0, bgOpacity: 0.5,
-                bgColor: '#ffffff', color: '#1a1a1a'
-            });
+            const { patternType, boundaryShape, attractorMode, trimTarget } = params;
+            const set = (key) => (v) => setParams(p => ({ ...p, [key]: v }));
+            const notify = (msg) => setToast({ msg, id: Date.now() });
 
-            const [stats, setStats] = useState({ visibleDots: 0, transparency: 0, minVal: 0, maxVal: 0 });
+            useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 2400); return () => clearTimeout(t); }, [toast]);
+
+            // 自動儲存（僅存在此瀏覽器）
+            useEffect(() => {
+                const t = setTimeout(() => saveStore({ design: params, mode: view.mode, guides: view.guides, sections: openSections }), 300);
+                return () => clearTimeout(t);
+            }, [params, view.mode, view.guides, openSections]);
+
+            // 復原 / 重做：350ms 內的連續變更（拖曳、滑桿）合併為一步
+            const historyRef = useRef({ past: [], future: [], base: null, timer: 0, skip: false });
+            useEffect(() => {
+                const h = historyRef.current;
+                if (h.base === null || h.skip) { h.base = params; h.skip = false; return; }
+                clearTimeout(h.timer);
+                h.timer = setTimeout(() => {
+                    if (h.base === params) return;
+                    h.past.push(h.base); if (h.past.length > 100) h.past.shift();
+                    h.future = []; h.base = params; setHistTick(t => t + 1);
+                }, 350);
+            }, [params]);
+            const flushHistory = () => {
+                const h = historyRef.current; clearTimeout(h.timer);
+                if (h.base !== null && h.base !== params) { h.past.push(h.base); h.future = []; h.base = params; }
+            };
+            const undo = () => {
+                flushHistory(); const h = historyRef.current;
+                if (!h.past.length) return;
+                h.future.push(params); const prev = h.past.pop();
+                h.skip = true; h.base = prev; setParams(prev); setHistTick(t => t + 1);
+            };
+            const redo = () => {
+                const h = historyRef.current;
+                if (!h.future.length) return;
+                h.past.push(params); const next = h.future.pop();
+                h.skip = true; h.base = next; setParams(next); setHistTick(t => t + 1);
+            };
+            const canUndo = historyRef.current.past.length > 0 || (historyRef.current.base !== null && historyRef.current.base !== params);
+            const canRedo = historyRef.current.future.length > 0;
+
+            // 主題切換時重繪畫布（畫布顏色取自 CSS token）
+            useEffect(() => {
+                const bump = () => setThemeTick(t => t + 1);
+                const mq = window.matchMedia('(prefers-color-scheme: dark)');
+                mq.addEventListener?.('change', bump);
+                const mo = new MutationObserver(bump);
+                mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+                return () => { mq.removeEventListener?.('change', bump); mo.disconnect(); };
+            }, []);
 
             const handleImageUpload = (e) => {
                 const file = e.target.files[0];
@@ -184,7 +592,7 @@
                     const reader = new FileReader();
                     reader.onload = (event) => {
                         const img = new Image();
-                        img.onload = () => setBgImage(img);
+                        img.onload = () => { setBgImage(img); setOpenSections(s => ({ ...s, reference: true })); notify('Reference image added · drag it to move'); };
                         img.src = event.target.result;
                     };
                     reader.readAsDataURL(file);
@@ -192,24 +600,27 @@
                 e.target.value = '';
             };
 
+            const clampZoom = (z) => clamp(z, 0.2, 200);
+
             // 以游標位置為中心縮放；React 的 onWheel 是 passive，無法 preventDefault，改用原生監聽
             useEffect(() => {
-                const el = containerRef.current;
+                const el = tableRef.current;
                 if (!el) return;
                 const onWheel = (e) => {
                     e.preventDefault();
                     const rect = el.getBoundingClientRect();
                     const sx = e.clientX - rect.left - rect.width / 2; const sy = e.clientY - rect.top - rect.height / 2;
                     const factor = e.deltaY > 0 ? 0.92 : 1.08;
-                    setParams(p => {
-                        const zoom = Math.min(Math.max(p.viewZoom * factor, 1), 100);
-                        const k = zoom / p.viewZoom;
-                        return { ...p, viewZoom: zoom, panX: sx - (sx - p.panX) * k, panY: sy - (sy - p.panY) * k };
+                    setView(v => {
+                        const zoom = clampZoom(v.zoom * factor); const k = zoom / v.zoom;
+                        return { ...v, zoom, panX: sx - (sx - v.panX) * k, panY: sy - (sy - v.panY) * k };
                     });
                 };
                 el.addEventListener('wheel', onWheel, { passive: false });
                 return () => el.removeEventListener('wheel', onWheel);
             }, []);
+
+            const zoomBy = (factor) => setView(v => { const zoom = clampZoom(v.zoom * factor); const k = zoom / v.zoom; return { ...v, zoom, panX: v.panX * k, panY: v.panY * k }; });
 
             const getBounds = () => {
                 if (boundaryShape === 'rect') return { minX: Math.min(params.bL, params.bR), maxX: Math.max(params.bL, params.bR), minY: Math.min(params.bT, params.bB), maxY: Math.max(params.bT, params.bB) };
@@ -218,11 +629,32 @@
                 return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
             };
 
+            // 把邊界縮放到畫面中，避開分析卡與浮動控制
+            const fitView = () => {
+                if (!canvasDim.w) return;
+                const b = getBounds();
+                const bw = Math.max(b.maxX - b.minX, 1); const bh = Math.max(b.maxY - b.minY, 1);
+                const mobile = canvasDim.w < 600;
+                const pad = { l: 32, r: !mobile && cardOpen ? 272 : 32, t: mobile ? 64 : 60, b: mobile ? 60 : 36 };
+                const zoom = clampZoom(Math.min((canvasDim.w - pad.l - pad.r) / bw, (canvasDim.h - pad.t - pad.b) / bh));
+                const sx = (pad.l + canvasDim.w - pad.r) / 2 - canvasDim.w / 2; const sy = (pad.t + canvasDim.h - pad.b) / 2 - canvasDim.h / 2;
+                setView(v => ({ ...v, zoom, panX: sx - (b.minX + bw / 2) * zoom, panY: sy - (b.minY + bh / 2) * zoom }));
+            };
+            useEffect(() => { if (canvasDim.w > 0 && !fittedRef.current) { fittedRef.current = true; fitView(); } }, [canvasDim.w, params]);
+
             const getArea = () => {
                 if (boundaryShape === 'circle') return Math.PI * params.bRad**2;
                 if (boundaryShape === 'rect') return Math.abs((params.bR - params.bL) * (params.bB - params.bT));
                 const q = params.quadPts;
                 return Math.abs(q.reduce((s, p, i) => s + p.x * q[(i + 1) % 4].y - q[(i + 1) % 4].x * p.y, 0)) / 2;
+            };
+
+            // 矩形與四邊形的外框頂點（世界座標）；圓形回傳 null
+            const outlinePts = () => {
+                if (boundaryShape === 'circle') return null;
+                if (boundaryShape === 'quad') return params.quadPts;
+                const b = getBounds();
+                return [{ x: b.minX, y: b.minY }, { x: b.maxX, y: b.minY }, { x: b.maxX, y: b.maxY }, { x: b.minX, y: b.maxY }];
             };
 
             // 數值調整邊界尺寸（以中心為基準縮放），與畫布拖曳同步
@@ -268,7 +700,7 @@
                 return params.minDiameter + (params.baseDiameter - params.minDiameter) * Math.pow(t, params.falloff);
             };
 
-            // 產生所有可見圓點 {x, y, dia}；畫布、統計與 SVG 匯出共用
+            // 產生所有可見圓點 {x, y, dia}；畫布、統計與匯出共用
             const collectDots = () => {
                 const dots = [];
                 const addDot = (x, y, bypassTrim = false) => {
@@ -333,6 +765,20 @@
                 return dots;
             };
 
+            // 可製造性分析：孔徑與料寬須 ≥ 板厚（沖孔經驗法則）
+            const analyze = (dots) => {
+                const t = params.thickness; const webs = nearestWebs(dots);
+                const issues = new Set(); let small = 0, tight = 0, overlaps = 0, minWeb = Infinity, holeArea = 0, cutLength = 0;
+                dots.forEach((d, i) => {
+                    holeArea += Math.PI * (d.dia / 2)**2; cutLength += Math.PI * d.dia;
+                    if (webs[i] < minWeb) minWeb = webs[i];
+                    if (d.dia < t - 1e-9) { small++; issues.add(i); }
+                    if (webs[i] < 0) { overlaps++; issues.add(i); }
+                    else if (webs[i] < t - 1e-9) { tight++; issues.add(i); }
+                });
+                return { issues, small, tight, overlaps, minWeb, holeArea, cutLength };
+            };
+
             const getImageRect = () => {
                 if (!bgImage) return null;
                 const w = params.bgWidth; const h = w * ((bgImage.height / bgImage.width) || 1);
@@ -340,99 +786,140 @@
             };
 
             // 以 CSS 像素繪製整個場景；螢幕畫布與高解析 PNG 匯出共用
-            const drawScene = (ctx, w, h, dots) => {
-                const cx = w / 2 + params.panX; const cy = h / 2 + params.panY;
-                const zoom = params.viewZoom;
+            const drawScene = (ctx, w, h, dots, issues) => {
+                const css = getComputedStyle(document.documentElement);
+                const tok = (name) => css.getPropertyValue(name).trim();
+                const cx = w / 2 + view.panX; const cy = h / 2 + view.panY;
+                const zoom = view.zoom;
+                const X = (x) => cx + x * zoom; const Y = (y) => cy + y * zoom;
+                const material = view.mode === 'material';
+                const finish = FINISHES[params.finish] || FINISHES.aluminium;
                 const handle = (x, y, color, r = 5, lw = 2) => {
-                    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(cx + x * zoom, cy + y * zoom, r, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X(x), Y(y), r, 0, Math.PI*2); ctx.fill();
                     ctx.strokeStyle = 'white'; ctx.lineWidth = lw; ctx.stroke();
                 };
+                const traceBoundary = () => {
+                    ctx.beginPath();
+                    const pts = outlinePts();
+                    if (!pts) ctx.arc(X(params.bCX), Y(params.bCY), params.bRad * zoom, 0, Math.PI*2);
+                    else { pts.forEach((p, i) => i === 0 ? ctx.moveTo(X(p.x), Y(p.y)) : ctx.lineTo(X(p.x), Y(p.y))); ctx.closePath(); }
+                };
 
-                ctx.fillStyle = params.bgColor; ctx.fillRect(0, 0, w, h);
+                // 工作檯面與 mm 格線（每 5 格一條主線）
+                ctx.fillStyle = tok('--ws'); ctx.fillRect(0, 0, w, h);
+                if (view.guides) {
+                    const minor = [1, 2, 5, 10, 20, 50, 100, 200, 500].find(s => s * zoom >= 12) || 1000;
+                    ctx.lineWidth = 1;
+                    [[minor, tok('--grid-minor')], [minor * 5, tok('--grid-major')]].forEach(([step, color]) => {
+                        ctx.strokeStyle = color; ctx.beginPath();
+                        for (let gx = Math.ceil(-cx / zoom / step) * step; gx <= (w - cx) / zoom; gx += step) { const px = Math.round(X(gx)) + 0.5; ctx.moveTo(px, 0); ctx.lineTo(px, h); }
+                        for (let gy = Math.ceil(-cy / zoom / step) * step; gy <= (h - cy) / zoom; gy += step) { const py = Math.round(Y(gy)) + 0.5; ctx.moveTo(0, py); ctx.lineTo(w, py); }
+                        ctx.stroke();
+                    });
+                }
+
+                // 板材
+                ctx.save();
+                traceBoundary();
+                if (material) {
+                    const b = getBounds();
+                    const grad = ctx.createLinearGradient(X(b.minX), Y(b.minY), X(b.maxX), Y(b.maxY));
+                    grad.addColorStop(0, finish.sheet[0]); grad.addColorStop(0.55, finish.sheet[1]); grad.addColorStop(1, finish.sheet[0]);
+                    ctx.fillStyle = grad; ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6;
+                } else {
+                    ctx.fillStyle = params.bgColor; ctx.shadowColor = 'rgba(0,0,0,0.08)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 1;
+                }
+                ctx.fill();
+                ctx.restore();
 
                 const img = getImageRect();
                 if (img) {
                     ctx.save(); ctx.globalAlpha = params.bgOpacity;
-                    ctx.drawImage(bgImage, cx + img.x * zoom, cy + img.y * zoom, img.w * zoom, img.h * zoom);
+                    ctx.drawImage(bgImage, X(img.x), Y(img.y), img.w * zoom, img.h * zoom);
                     ctx.restore();
                 }
 
-                // 邊界
-                ctx.save(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
-                if (boundaryShape === 'rect') {
-                    ctx.strokeRect(cx + params.bL * zoom, cy + params.bT * zoom, (params.bR - params.bL) * zoom, (params.bB - params.bT) * zoom);
-                    [{ x: params.bL, y: params.bT }, { x: params.bR, y: params.bT }, { x: params.bL, y: params.bB }, { x: params.bR, y: params.bB }].forEach(c => handle(c.x, c.y, '#ef4444'));
-                } else if (boundaryShape === 'circle') {
-                    ctx.beginPath(); ctx.arc(cx + params.bCX * zoom, cy + params.bCY * zoom, params.bRad * zoom, 0, Math.PI*2); ctx.stroke();
-                    handle(params.bCX, params.bCY, '#ef4444');
-                    handle(params.bCX, params.bCY - params.bRad, '#ef4444');
-                } else {
-                    ctx.beginPath();
-                    params.quadPts.forEach((p, i) => i === 0 ? ctx.moveTo(cx + p.x * zoom, cy + p.y * zoom) : ctx.lineTo(cx + p.x * zoom, cy + p.y * zoom));
-                    ctx.closePath(); ctx.stroke();
-                    params.quadPts.forEach(p => handle(p.x, p.y, '#ef4444'));
-                }
+                // 圓孔：材質模式下裁切在板材內，邊緣的孔會變成缺口
+                ctx.save();
+                if (material) { traceBoundary(); ctx.clip(); }
+                ctx.fillStyle = material ? finish.hole : params.color;
+                dots.forEach(d => { ctx.beginPath(); ctx.arc(X(d.x), Y(d.y), (d.dia / 2) * zoom, 0, Math.PI * 2); ctx.fill(); });
                 ctx.restore();
 
-                // 網格與吸引子
-                if (patternType === 'splineGrid') {
-                    ctx.save(); [params.boundarySplineA, params.boundarySplineB].forEach((pts, idx) => {
-                        ctx.strokeStyle = idx === 0 ? '#f59e0b' : '#d97706'; ctx.lineWidth = 2; ctx.beginPath();
-                        for (let t=0; t<=1; t+=0.02) { const p = getBezierPoint(t, pts); if (t === 0) ctx.moveTo(cx + p.x * zoom, cy + p.y * zoom); else ctx.lineTo(cx + p.x * zoom, cy + p.y * zoom); }
-                        ctx.stroke();
-                        pts.forEach(p => handle(p.x, p.y, idx === 0 ? '#f59e0b' : '#d97706', 5, 1.5));
-                    }); ctx.restore();
-                }
-
-                ctx.save(); if (attractorMode !== 'none') {
-                    const color = attractorMode === 'curve' ? '#3b82f6' : attractorMode === 'line' ? LINE_COLOR : '#10b981';
-                    ctx.strokeStyle = color; ctx.lineWidth = 2;
-                    if (attractorMode === 'radial') {
-                        ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(cx, cy, params.attractorRadius * zoom, 0, Math.PI*2); ctx.stroke();
-                        ctx.setLineDash([]); handle(params.attractorRadius, 0, color, 6);
-                    } else if (attractorMode === 'curve' || attractorMode === 'line') {
-                        ctx.beginPath();
-                        const pts = attractorMode === 'curve' ? params.cvs : params.linePts;
-                        if (attractorMode === 'curve') for (let t=0; t<=1; t+=0.02) { const p = getBezierPoint(t, pts); if (t === 0) ctx.moveTo(cx + p.x * zoom, cy + p.y * zoom); else ctx.lineTo(cx + p.x * zoom, cy + p.y * zoom); }
-                        else { ctx.moveTo(cx + pts[0].x * zoom, cy + pts[0].y * zoom); ctx.lineTo(cx + pts[1].x * zoom, cy + pts[1].y * zoom); }
-                        ctx.stroke();
-                        pts.forEach(p => handle(p.x, p.y, color));
-                    }
-                } ctx.restore();
-
-                // 圓點
-                ctx.fillStyle = params.color;
-                dots.forEach(d => { ctx.beginPath(); ctx.arc(cx + d.x * zoom, cy + d.y * zoom, (d.dia / 2) * zoom, 0, Math.PI * 2); ctx.fill(); });
-
-                if (hoverHighlight !== 'none' && dots.length) {
-                    ctx.save();
-                    const pick = hoverHighlight === 'max' ? Math.max : Math.min;
-                    const target = dots.reduce((m, d) => pick(m, d.dia), dots[0].dia);
-                    ctx.strokeStyle = hoverHighlight === 'max' ? '#f97316' : '#3b82f6'; ctx.lineWidth = 3;
-                    dots.filter(d => Math.abs(d.dia - target) < 0.001).slice(0, 100).forEach(d => { ctx.beginPath(); ctx.arc(cx + d.x * zoom, cy + d.y * zoom, (d.dia/2)*zoom + 5, 0, Math.PI*2); ctx.stroke(); });
+                if (view.guides) {
+                    // 邊界
+                    ctx.save(); ctx.strokeStyle = COLORS.boundary; ctx.lineWidth = 1.5;
+                    traceBoundary(); ctx.stroke();
+                    if (boundaryShape === 'circle') { handle(params.bCX, params.bCY, COLORS.boundary); handle(params.bCX, params.bCY - params.bRad, COLORS.boundary); }
+                    else (boundaryShape === 'quad' ? params.quadPts : outlinePts()).forEach(p => handle(p.x, p.y, COLORS.boundary));
                     ctx.restore();
+
+                    // 陣列樣條
+                    if (patternType === 'splineGrid') {
+                        ctx.save(); [params.boundarySplineA, params.boundarySplineB].forEach((pts, idx) => {
+                            const color = idx === 0 ? COLORS.splineA : COLORS.splineB;
+                            ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
+                            for (let t = 0; t <= 1.0001; t += 0.02) { const p = getBezierPoint(Math.min(t, 1), pts); if (t === 0) ctx.moveTo(X(p.x), Y(p.y)); else ctx.lineTo(X(p.x), Y(p.y)); }
+                            ctx.stroke();
+                            pts.forEach(p => handle(p.x, p.y, color, 5, 1.5));
+                        }); ctx.restore();
+                    }
+
+                    // 吸引子
+                    ctx.save(); if (attractorMode !== 'none') {
+                        const color = COLORS[attractorMode];
+                        ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+                        if (attractorMode === 'radial') {
+                            ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(cx, cy, params.attractorRadius * zoom, 0, Math.PI*2); ctx.stroke();
+                            ctx.setLineDash([]); handle(params.attractorRadius, 0, color, 6);
+                        } else {
+                            ctx.beginPath();
+                            const pts = attractorMode === 'curve' ? params.cvs : params.linePts;
+                            if (attractorMode === 'curve') {
+                                for (let t = 0; t <= 1.0001; t += 0.02) { const p = getBezierPoint(Math.min(t, 1), pts); if (t === 0) ctx.moveTo(X(p.x), Y(p.y)); else ctx.lineTo(X(p.x), Y(p.y)); }
+                            } else { ctx.moveTo(X(pts[0].x), Y(pts[0].y)); ctx.lineTo(X(pts[1].x), Y(pts[1].y)); }
+                            ctx.stroke();
+                            pts.forEach(p => handle(p.x, p.y, color));
+                        }
+                    } ctx.restore();
+
+                    // 參考圖外框與縮放把手
+                    if (img) {
+                        ctx.save(); ctx.strokeStyle = COLORS.image; ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
+                        ctx.strokeRect(X(img.x), Y(img.y), img.w * zoom, img.h * zoom);
+                        ctx.setLineDash([]); handle(img.x + img.w, img.y + img.h, COLORS.image, 6);
+                        ctx.restore();
+                    }
                 }
 
-                // 參考圖外框與縮放把手
-                if (img) {
-                    ctx.save(); ctx.strokeStyle = IMAGE_COLOR; ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
-                    ctx.strokeRect(cx + img.x * zoom, cy + img.y * zoom, img.w * zoom, img.h * zoom);
-                    ctx.setLineDash([]); handle(img.x + img.w, img.y + img.h, IMAGE_COLOR, 6);
+                // 滑過分析卡時標示：最大孔、最小孔、或不符製造條件的孔
+                if (hoverHighlight !== 'none' && dots.length) {
+                    let targets;
+                    if (hoverHighlight === 'issues') targets = dots.filter((d, i) => issues.has(i));
+                    else {
+                        const pick = hoverHighlight === 'max' ? Math.max : Math.min;
+                        const target = dots.reduce((m, d) => pick(m, d.dia), dots[0].dia);
+                        targets = dots.filter(d => Math.abs(d.dia - target) < 0.001);
+                    }
+                    ctx.save();
+                    ctx.strokeStyle = hoverHighlight === 'issues' ? tok('--bad') : hoverHighlight === 'max' ? '#f97316' : '#3b82f6'; ctx.lineWidth = 2;
+                    targets.slice(0, 400).forEach(d => { ctx.beginPath(); ctx.arc(X(d.x), Y(d.y), (d.dia / 2) * zoom + 4, 0, Math.PI*2); ctx.stroke(); });
                     ctx.restore();
                 }
             };
 
-            const toWorld = (e) => {
+            const toWorld = (clientX, clientY) => {
                 const rect = canvasRef.current.getBoundingClientRect();
                 return {
-                    x: (e.clientX - rect.left - canvasDim.w / 2 - params.panX) / params.viewZoom,
-                    y: (e.clientY - rect.top - canvasDim.h / 2 - params.panY) / params.viewZoom
+                    x: (clientX - rect.left - canvasDim.w / 2 - view.panX) / view.zoom,
+                    y: (clientY - rect.top - canvasDim.h / 2 - view.panY) / view.zoom
                 };
             };
 
-            // 依優先序找出被抓取的把手：邊界 → 吸引子 → 陣列樣條 → 參考圖；都沒有則平移畫布
+            // 依優先序找出被抓取的把手：邊界 → 吸引子 → 陣列樣條 → 參考圖；隱藏參考線時只能平移
             const hitTest = (m) => {
-                const near = (x, y) => dist(m.x, m.y, x, y) * params.viewZoom < HANDLE_RADIUS;
+                if (!view.guides) return null;
+                const near = (x, y) => dist(m.x, m.y, x, y) * view.zoom < HANDLE_RADIUS;
                 if (boundaryShape === 'rect') {
                     const corners = [
                         { id: 'TL', x: params.bL, y: params.bT }, { id: 'TR', x: params.bR, y: params.bT },
@@ -457,29 +944,51 @@
                 }
                 const img = getImageRect();
                 if (img && near(img.x + img.w, img.y + img.h)) return { mode: 'imageScale', left: img.x, top: img.y };
-                if (boundaryShape === 'circle' && Math.abs(dist(m.x, m.y, params.bCX, params.bCY) - params.bRad) * params.viewZoom < HANDLE_RADIUS / 2) return { mode: 'boundaryCircleSize' };
+                if (boundaryShape === 'circle' && Math.abs(dist(m.x, m.y, params.bCX, params.bCY) - params.bRad) * view.zoom < HANDLE_RADIUS / 2) return { mode: 'boundaryCircleSize' };
                 if (img && m.x >= img.x && m.x <= img.x + img.w && m.y >= img.y && m.y <= img.y + img.h) return { mode: 'imageMove', start: m, startX: params.bgOffsetX, startY: params.bgOffsetY };
                 return null;
+            };
+
+            const pinchState = () => {
+                const [a, b] = [...pointersRef.current.values()];
+                const rect = canvasRef.current.getBoundingClientRect();
+                return { d: dist(a.x, a.y, b.x, b.y), mx: (a.x + b.x) / 2 - rect.left - rect.width / 2, my: (a.y + b.y) / 2 - rect.top - rect.height / 2 };
             };
 
             const onPointerDown = (e) => {
                 if (!canvasRef.current || (e.button !== 0 && e.button !== 1)) return;
                 e.preventDefault();
-                const hit = e.button === 0 ? hitTest(toWorld(e)) : null;
-                const drag = hit || { mode: 'canvasPan', startX: e.clientX, startY: e.clientY, panX: params.panX, panY: params.panY };
+                e.currentTarget.setPointerCapture(e.pointerId);
+                pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                if (pointersRef.current.size === 2) {
+                    // 雙指：縮放＋平移
+                    dragRef.current = { mode: 'pinch', start: pinchState(), zoom: view.zoom, panX: view.panX, panY: view.panY };
+                    setDragMode('pinch'); return;
+                }
+                if (pointersRef.current.size > 2) return;
+                const hit = e.button === 0 ? hitTest(toWorld(e.clientX, e.clientY)) : null;
+                const drag = hit || { mode: 'canvasPan', startX: e.clientX, startY: e.clientY, panX: view.panX, panY: view.panY };
                 dragRef.current = drag;
                 setDragMode(drag.mode);
-                e.currentTarget.setPointerCapture(e.pointerId);
             };
 
             const onPointerMove = (e) => {
+                if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                const { x: mx, y: my } = toWorld(e.clientX, e.clientY);
+                if (coordsRef.current) coordsRef.current.textContent = `X ${mx.toFixed(2).padStart(8)}  Y ${(-my).toFixed(2).padStart(8)}`;
                 const drag = dragRef.current;
-                if (!drag) return;
-                if (drag.mode === 'canvasPan') {
-                    setParams(p => ({ ...p, panX: drag.panX + e.clientX - drag.startX, panY: drag.panY + e.clientY - drag.startY }));
+                if (!drag) { e.currentTarget.style.cursor = hitTest({ x: mx, y: my }) ? 'move' : 'grab'; return; }
+                if (drag.mode === 'pinch') {
+                    if (pointersRef.current.size < 2) return;
+                    const now = pinchState(); const s = drag.start;
+                    const zoom = clampZoom(drag.zoom * now.d / s.d); const k = zoom / drag.zoom;
+                    setView(v => ({ ...v, zoom, panX: now.mx - (s.mx - drag.panX) * k, panY: now.my - (s.my - drag.panY) * k }));
                     return;
                 }
-                const { x: mx, y: my } = toWorld(e);
+                if (drag.mode === 'canvasPan') {
+                    setView(v => ({ ...v, panX: drag.panX + e.clientX - drag.startX, panY: drag.panY + e.clientY - drag.startY }));
+                    return;
+                }
                 if (drag.mode === 'boundaryCorner') {
                     if (drag.index === 'TL') setParams(p => ({ ...p, bL: mx, bT: my }));
                     else if (drag.index === 'TR') setParams(p => ({ ...p, bR: mx, bT: my }));
@@ -503,9 +1012,26 @@
                 }
             };
 
-            const onPointerUp = () => { dragRef.current = null; setDragMode(null); };
+            const onPointerUp = (e) => {
+                pointersRef.current.delete(e.pointerId);
+                if (dragRef.current?.mode === 'pinch' && pointersRef.current.size === 1) {
+                    // 雙指放開一指後，剩下那一指接著平移
+                    const [p] = [...pointersRef.current.values()];
+                    dragRef.current = { mode: 'canvasPan', startX: p.x, startY: p.y, panX: view.panX, panY: view.panY };
+                    setDragMode('canvasPan'); return;
+                }
+                if (pointersRef.current.size === 0) { dragRef.current = null; setDragMode(null); }
+            };
+
+            const fileBase = () => `Braun_Pattern_Lab_${Date.now()}`;
+            const deliver = async (filename, blob, what) => {
+                const result = await saveFile(filename, blob);
+                if (result === 'saved') notify(`${what} exported`);
+                else if (result !== 'declined') notify(`Couldn't save the file: ${result}`);
+            };
 
             const exportPNG = () => {
+                setMenu(null);
                 if (canvasDim.w === 0) return;
                 // 以至少 3 倍解析度重繪（上限約 40MP），而非直接擷取螢幕畫布
                 const scale = Math.min(Math.max(3, window.devicePixelRatio || 1), Math.sqrt(40e6 / (canvasDim.w * canvasDim.h)));
@@ -513,151 +1039,336 @@
                 off.width = Math.round(canvasDim.w * scale); off.height = Math.round(canvasDim.h * scale);
                 const ctx = off.getContext('2d', { alpha: false });
                 ctx.setTransform(scale, 0, 0, scale, 0, 0);
-                drawScene(ctx, canvasDim.w, canvasDim.h, collectDots());
-                saveFile(`Braun_Pattern_Lab_${Date.now()}.png`, dataURLToBlob(off.toDataURL('image/png')));
+                drawScene(ctx, canvasDim.w, canvasDim.h, dots, analysis.issues);
+                deliver(`${fileBase()}.png`, dataURLToBlob(off.toDataURL('image/png')), 'PNG preview');
             };
 
+            // SVG：1:1 mm，外框與圓孔分成兩個群組（CAD 匯入時成為兩個圖層）
             const exportSVG = () => {
-                const { color, bgColor } = params;
+                setMenu(null);
                 const b = getBounds();
-                const width = +(b.maxX - b.minX).toFixed(3); const height = +(b.maxY - b.minY).toFixed(3);
-
-                let svgContent = `<svg width="${width}mm" height="${height}mm" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
-                svgContent += `<rect width="100%" height="100%" fill="${bgColor}"/>`;
-                svgContent += `<g transform="translate(${+(-b.minX).toFixed(3)}, ${+(-b.minY).toFixed(3)})">`;
-                collectDots().forEach(d => {
-                    svgContent += `<circle cx="${d.x.toFixed(3)}" cy="${d.y.toFixed(3)}" r="${(d.dia/2).toFixed(3)}" fill="${color}"/>`;
-                });
-                svgContent += `</g></svg>`;
-                saveFile(`Braun_Pattern_Lab_${Date.now()}.svg`, new Blob([svgContent], { type: 'image/svg+xml' }));
+                const n = (v) => +v.toFixed(3);
+                const width = n(b.maxX - b.minX); const height = n(b.maxY - b.minY);
+                const pts = outlinePts();
+                const outline = pts
+                    ? `<polygon points="${pts.map(p => `${n(p.x)},${n(p.y)}`).join(' ')}"/>`
+                    : `<circle cx="${n(params.bCX)}" cy="${n(params.bCY)}" r="${n(params.bRad)}"/>`;
+                let svg = `<svg width="${width}mm" height="${height}mm" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
+                svg += `<g transform="translate(${n(-b.minX)}, ${n(-b.minY)})">`;
+                svg += `<g id="boundary" fill="none" stroke="#e11d48" stroke-width="0.1">${outline}</g>`;
+                svg += `<g id="holes" fill="${params.color}">`;
+                dots.forEach(d => { svg += `<circle cx="${d.x.toFixed(3)}" cy="${d.y.toFixed(3)}" r="${(d.dia/2).toFixed(3)}"/>`; });
+                svg += `</g></g></svg>`;
+                deliver(`${fileBase()}.svg`, new Blob([svg], { type: 'image/svg+xml' }), 'SVG drawing');
             };
+
+            // DXF (R12)：mm、Y 軸朝上、原點在圖案中心；HOLES 與 BOUNDARY 兩個圖層
+            const exportDXF = () => {
+                setMenu(null);
+                const n = (v) => (+v.toFixed(4)).toString();
+                const L = ['0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', '4', '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES'];
+                const pts = outlinePts();
+                if (pts) {
+                    L.push('0', 'POLYLINE', '8', 'BOUNDARY', '66', '1', '10', '0', '20', '0', '30', '0', '70', '1');
+                    pts.forEach(p => L.push('0', 'VERTEX', '8', 'BOUNDARY', '10', n(p.x), '20', n(-p.y), '30', '0'));
+                    L.push('0', 'SEQEND', '8', 'BOUNDARY');
+                } else {
+                    L.push('0', 'CIRCLE', '8', 'BOUNDARY', '10', n(params.bCX), '20', n(-params.bCY), '30', '0', '40', n(params.bRad));
+                }
+                dots.forEach(d => L.push('0', 'CIRCLE', '8', 'HOLES', '10', n(d.x), '20', n(-d.y), '30', '0', '40', n(d.dia / 2)));
+                L.push('0', 'ENDSEC', '0', 'EOF');
+                deliver(`${fileBase()}.dxf`, new Blob([L.join('\r\n') + '\r\n'], { type: 'application/dxf' }), 'DXF drawing');
+            };
+
+            // 孔位表：mm、Y 軸朝上、原點在圖案中心（與 DXF 相同）
+            const exportCSV = () => {
+                setMenu(null);
+                const rows = ['hole,x_mm,y_mm,diameter_mm'];
+                dots.forEach((d, i) => rows.push(`${i + 1},${d.x.toFixed(3)},${(-d.y).toFixed(3)},${d.dia.toFixed(3)}`));
+                deliver(`${fileBase()}.csv`, new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }), 'Hole table');
+            };
+
+            const saveDesign = () => {
+                setMenu(null);
+                const body = JSON.stringify({ app: 'pattern LAB', version: 9, design: params }, null, 2);
+                deliver(`${fileBase()}.json`, new Blob([body], { type: 'application/json' }), 'Design');
+            };
+
+            const openDesign = (e) => {
+                const file = e.target.files[0]; e.target.value = '';
+                if (!file) return;
+                file.text().then(text => {
+                    const json = JSON.parse(text);
+                    if (!json || typeof json !== 'object' || !(json.design || json.patternType)) throw new Error('not a design');
+                    setParams(sanitizeDesign(json.design || json));
+                    fittedRef.current = false;
+                    notify(`Opened ${file.name}`);
+                }).catch(() => notify(`${file.name} isn't a pattern LAB design file`));
+            };
+
+            const resetDesign = () => {
+                setMenu(null);
+                setParams(DEFAULT_DESIGN);
+                fittedRef.current = false;
+                notify('Reset to defaults · Ctrl+Z to undo');
+            };
+
+            // 鍵盤快捷鍵（文字輸入中不觸發）
+            useEffect(() => {
+                const onKey = (e) => {
+                    if (e.target.matches?.('input:not([type=range]), textarea')) return;
+                    const mod = e.metaKey || e.ctrlKey; const key = e.key.toLowerCase();
+                    if (mod && key === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+                    else if (mod && key === 'y') { e.preventDefault(); redo(); }
+                    else if (mod || e.altKey) return;
+                    else if (key === 'f') fitView();
+                    else if (key === 'h') setView(v => ({ ...v, guides: !v.guides }));
+                    else if (key === 'm') setView(v => ({ ...v, mode: v.mode === 'material' ? 'drawing' : 'material' }));
+                    else if (key === '=' || key === '+') zoomBy(1.25);
+                    else if (key === '-') zoomBy(0.8);
+                    else if (key === 'escape') setMenu(null);
+                };
+                window.addEventListener('keydown', onKey);
+                return () => window.removeEventListener('keydown', onKey);
+            });
+
+            useEffect(() => {
+                if (!menu) return;
+                const close = (e) => { if (!e.target.closest('.menu-wrap')) setMenu(null); };
+                window.addEventListener('pointerdown', close);
+                return () => window.removeEventListener('pointerdown', close);
+            }, [menu]);
 
             useLayoutEffect(() => {
-                const updateSize = () => { if (containerRef.current) setCanvasDim({ w: containerRef.current.clientWidth, h: containerRef.current.clientHeight }); };
+                const updateSize = () => { if (tableRef.current) setCanvasDim({ w: tableRef.current.clientWidth, h: tableRef.current.clientHeight }); };
                 updateSize();
                 const obs = new ResizeObserver(updateSize);
-                if (containerRef.current) obs.observe(containerRef.current);
+                if (tableRef.current) obs.observe(tableRef.current);
                 return () => obs.disconnect();
             }, []);
 
             const dpr = window.devicePixelRatio || 1;
+
+            // 圖案與分析只在設計變更時重算；平移縮放只重繪
+            const { dots, analysis } = useMemo(() => { const dots = collectDots(); return { dots, analysis: analyze(dots) }; }, [params]);
+            const stats = useMemo(() => {
+                const area = getArea();
+                const finish = FINISHES[params.finish] || FINISHES.aluminium;
+                let minDia = Infinity, maxDia = 0;
+                dots.forEach(d => { if (d.dia < minDia) minDia = d.dia; if (d.dia > maxDia) maxDia = d.dia; });
+                return {
+                    holes: dots.length,
+                    openArea: area > 0 ? analysis.holeArea / area * 100 : 0,
+                    minDia: dots.length ? minDia : 0, maxDia,
+                    minWeb: analysis.minWeb, small: analysis.small, tight: analysis.tight, overlaps: analysis.overlaps,
+                    cutLength: analysis.cutLength,
+                    mass: Math.max(0, area - analysis.holeArea) * params.thickness / 1000 * finish.density
+                };
+            }, [dots, analysis]);
 
             useEffect(() => {
                 const canvas = canvasRef.current;
                 if (!canvas || canvasDim.w === 0) return;
                 const ctx = canvas.getContext('2d', { alpha: false });
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-                const dots = collectDots();
-                drawScene(ctx, canvasDim.w, canvasDim.h, dots);
-
-                // 開孔率：以每個孔的實際直徑計算孔面積總和
-                const areaVal = getArea();
-                const holeArea = dots.reduce((s, d) => s + Math.PI * (d.dia / 2)**2, 0);
-                const dias = dots.map(d => d.dia);
-                setStats({
-                    visibleDots: dots.length,
-                    transparency: areaVal > 0 ? Math.round(holeArea / areaVal * 100) : 0,
-                    minVal: dots.length ? Math.min(...dias).toFixed(2) : 0,
-                    maxVal: dots.length ? Math.max(...dias).toFixed(2) : 0
-                });
-            }, [params, patternType, boundaryShape, attractorMode, trimTarget, canvasDim, hoverHighlight, bgImage, dpr]);
+                drawScene(ctx, canvasDim.w, canvasDim.h, dots, analysis.issues);
+            }, [dots, analysis, params, view, canvasDim, hoverHighlight, bgImage, dpr, themeTick]);
 
             const bounds = getBounds();
             const boundW = round1(bounds.maxX - bounds.minX); const boundH = round1(bounds.maxY - bounds.minY);
+            const toggleSection = (key) => () => setOpenSections(s => ({ ...s, [key]: !s[key] }));
+            const fieldOn = attractorMode !== 'none';
+            const finish = FINISHES[params.finish] || FINISHES.aluminium;
+            const scaleLen = niceLength(view.zoom);
+            const issueCount = stats.small + stats.tight + stats.overlaps;
+
+            // 穿孔板業界標示：R = 圓孔、T = 60° 交錯孔距、U = 直排孔距
+            const designation = (() => {
+                if (patternType !== 'grid' && patternType !== 'hexagonal') return null;
+                const d = fieldOn ? `${fmt(stats.minDia, 1)}–${fmt(stats.maxDia, 1)}` : fmt(params.baseDiameter);
+                const square = Math.abs(params.spacingX - params.spacingY) < 1e-6;
+                if (patternType === 'grid') return square ? `R${d} U${fmt(params.spacingX)}` : `R${d} U${fmt(params.spacingX)}×${fmt(params.spacingY)}`;
+                return square && Math.abs(params.stagger - 0.5) < 1e-6 ? `R${d} T${fmt(params.spacingX)}` : `R${d} staggered`;
+            })();
+
+            const arraySummary = designation || (patternType === 'radial' ? `Radial · ${params.gridRows} rings` : `Spline · ${params.gridCols}×${params.gridRows}`);
+            const holeSummary = fieldOn ? `${FIELDS.find(f => f.value === attractorMode).label} · Ø${fmt(params.minDiameter)}–${fmt(params.baseDiameter)}` : `Ø${fmt(params.baseDiameter)}`;
+            const boundarySummary = boundaryShape === 'circle' ? `Ø${boundW}` : `${SHAPES.find(s => s.value === boundaryShape).label} · ${boundW}×${boundH}`;
+
+            const dfmText = issueCount === 0
+                ? `Clear for ${fmt(params.thickness)} mm sheet`
+                : [stats.overlaps && `${stats.overlaps} holes overlap`, stats.small && `${stats.small} holes under Ø${fmt(params.thickness)}`, stats.tight && `${stats.tight} webs under ${fmt(params.thickness)} mm`].filter(Boolean).join(' · ');
 
             return (
-                <div className="flex flex-col h-full bg-[#f8f8f8] text-[#1a1a1a] overflow-hidden select-none">
-                    <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-black/5 z-20 shadow-sm shrink-0">
-                        <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 bg-black rounded flex items-center justify-center text-white font-black italic shadow-lg text-lg">P</div>
-                            <h1 className="text-sm font-black uppercase tracking-widest text-black">pattern LAB</h1>
+                <div className="app">
+                    <header className="topbar">
+                        <div className="brand">
+                            <Logo />
+                            <span className="brand-name">pattern <b>LAB</b></span>
+                            <span className="brand-ver">v9</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                            {/* 更新：使用 image-up 作為圖片上傳圖標 */}
-                            <button onClick={() => fileInputRef.current.click()} className="p-2.5 bg-gray-100 rounded-full hover:bg-gray-200" title="Upload Reference Image"><Icon name="image-up" /></button>
-                            <input ref={fileInputRef} type="file" hidden accept="image/*" onChange={handleImageUpload} />
-                            <button onClick={exportPNG} className="p-2.5 bg-gray-100 rounded-full hover:bg-gray-200 text-blue-600 border border-blue-100 shadow-sm" title="Download PNG Preview"><Icon name="image-down" /></button>
-                            <button onClick={exportSVG} className="p-2.5 bg-black text-white rounded-full shadow-lg active:scale-95 transition-transform" title="Export CAD SVG"><Icon name="download" /></button>
-                        </div>
+                        <button className="icon-btn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo} onClick={undo}><Icon name="undo-2" /></button>
+                        <button className="icon-btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled={!canRedo} onClick={redo}><Icon name="redo-2" /></button>
+                        <span className="tb-sep"></span>
+                        <Menu id="file-menu" icon="folder-open" title="Design file" open={menu === 'file'} onToggle={() => setMenu(m => m === 'file' ? null : 'file')} items={[
+                            { icon: 'file-up', label: 'Open design…', hint: 'Load a saved .json design', onClick: () => { setMenu(null); designInputRef.current.click(); } },
+                            { icon: 'save', label: 'Save design', hint: 'Every setting as .json', onClick: saveDesign },
+                            '-',
+                            { icon: 'rotate-ccw', label: 'Reset to defaults', onClick: resetDesign }
+                        ]} />
+                        <button className="icon-btn" title="Add reference image" aria-label="Add reference image" onClick={() => fileInputRef.current.click()}><Icon name="image-plus" /></button>
+                        <input ref={fileInputRef} type="file" hidden accept="image/*" onChange={handleImageUpload} />
+                        <input ref={designInputRef} type="file" hidden accept=".json,application/json" onChange={openDesign} />
+                        <Menu id="export-menu" primary icon="download" label="Export" labelClass="export-label" title="Export" open={menu === 'export'} onToggle={() => setMenu(m => m === 'export' ? null : 'export')} items={[
+                            { icon: 'pen-tool', label: 'SVG drawing', hint: '1:1 mm · holes and outline in separate groups', onClick: exportSVG },
+                            { icon: 'drafting-compass', label: 'DXF drawing', hint: '1:1 mm for CAD and laser · Y up, origin at centre', onClick: exportDXF },
+                            { icon: 'sheet', label: 'Hole table (CSV)', hint: 'x, y, Ø for every hole · same origin as DXF', onClick: exportCSV },
+                            '-',
+                            { icon: 'image', label: 'PNG preview', hint: '3× render of the current view', onClick: exportPNG }
+                        ]} />
                     </header>
 
-                    <main className="flex flex-1 flex-col md:flex-row overflow-hidden h-full">
-                        <aside className="w-full md:w-96 bg-white border-r border-black/5 shadow-inner z-10 flex flex-col shrink-0 md:h-full h-[45dvh]">
-                            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <section><h2 className="text-[10px] font-black uppercase text-gray-400 mb-2">1. Array Type</h2><div className="flex gap-1 bg-gray-50 p-1 rounded-lg">
-                                        {['grid', 'hexagonal', 'radial', 'splineGrid'].map(m => (<button key={m} onClick={() => setPatternType(m)} className={`flex-1 p-2 rounded-md transition-all ${patternType === m ? 'bg-white shadow-sm' : 'opacity-40'}`}><Icon name={m === 'grid' ? 'grid-3x3' : m === 'hexagonal' ? 'hexagon' : m === 'radial' ? 'circle-dot' : 'spline'} size={14} className="mx-auto" /></button>))}
-                                    </div></section>
-                                    <section><h2 className="text-[10px] font-black uppercase text-gray-400 mb-2">2. Field Mode</h2><div className="flex gap-1 bg-gray-50 p-1 rounded-lg">
-                                        {Object.keys(FIELD_ICONS).map(m => (<button key={m} onClick={() => setAttractorMode(m)} className={`flex-1 p-2 rounded-md transition-all ${attractorMode === m ? 'bg-white shadow-sm' : 'opacity-40'}`}><Icon name={FIELD_ICONS[m]} size={14} className="mx-auto" /></button>))}
-                                    </div></section>
-                                </div>
-                                <section className="space-y-4">
-                                    <h2 className="text-[10px] font-black uppercase text-gray-400 border-b pb-1">3. Perforation (mm)</h2>
-                                    <ControlGroup label="Master Dia." value={params.baseDiameter} min={0.5} max={10} step={0.1} onChange={v => setParams(p => ({...p, baseDiameter: parseFloat(v)}))} />
-                                    {attractorMode !== 'none' && <div className="p-4 bg-blue-50/30 rounded-xl space-y-4 border border-blue-100/50">
-                                        <ControlGroup label="Min Dia." value={params.minDiameter} min={0.1} max={5} step={0.1} onChange={v => setParams(p => ({...p, minDiameter: parseFloat(v)}))} />
-                                        <ControlGroup label="Influence" value={params.influenceRange} min={5} max={200} step={1} onChange={v => setParams(p => ({...p, influenceRange: parseFloat(v)}))} />
-                                        <ControlGroup label="Falloff" value={params.falloff} min={0.1} max={5.0} step={0.1} onChange={v => setParams(p => ({...p, falloff: parseFloat(v)}))} />
+                    <div className="main">
+                        <aside className="panel">
+                            <Section icon="grid-3x3" title="Array" summary={arraySummary} open={openSections.array} onToggle={toggleSection('array')}>
+                                <Segmented label="Array type" options={PATTERNS} value={patternType} onChange={set('patternType')} />
+                                {patternType === 'radial' ? <>
+                                    <div className="row2">
+                                        <Param id="rings" label="Rings" value={params.gridRows} min={1} max={150} step={1} decimals={0} onChange={set('gridRows')} />
+                                        <Param id="mirror" label="Symmetry" value={params.mirrorCount} min={1} max={32} step={1} decimals={0} unit="×" onChange={set('mirrorCount')} />
+                                    </div>
+                                    <div className="row2">
+                                        <Param id="arc-pitch" label="Arc pitch" value={params.spacingX} min={1.5} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingX')} />
+                                        <Param id="ring-pitch" label="Ring pitch" value={params.spacingY} min={1.5} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingY')} />
+                                    </div>
+                                    <Param id="rotation" label="Rotation" value={params.rotation} min={0} max={360} step={0.5} unit="°" onChange={set('rotation')} />
+                                </> : <>
+                                    <div className="row2">
+                                        <Param id="cols" label="Columns" value={params.gridCols} min={2} max={150} step={1} decimals={0} onChange={set('gridCols')} />
+                                        <Param id="rows" label="Rows" value={params.gridRows} min={2} max={150} step={1} decimals={0} onChange={set('gridRows')} />
+                                    </div>
+                                    {patternType !== 'splineGrid' && <div className="row2">
+                                        <Param id="pitch-x" label="X pitch" value={params.spacingX} min={1.5} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingX')} />
+                                        <Param id="pitch-y" label="Y pitch" value={params.spacingY} min={1.5} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingY')} />
                                     </div>}
-                                </section>
-                                <section className="p-4 bg-gray-50 rounded-xl space-y-4 border border-black/5 shadow-sm">
-                                    <h2 className="text-[10px] font-black uppercase text-gray-400 border-b pb-1 flex items-center gap-2"><Icon name="layers" size={12} /> 4. Pattern Engine</h2>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <ControlGroup label={patternType === 'radial' ? "Rings" : "Cols (X)"} value={patternType === 'radial' ? params.gridRows : params.gridCols} min={2} max={150} step={1} onChange={v => setParams(p => (patternType === 'radial' ? {...p, gridRows: parseInt(v)} : {...p, gridCols: parseInt(v)}))} colorClass="text-orange-600" />
-                                        {patternType !== 'radial' && <ControlGroup label="Rows (Y)" value={params.gridRows} min={2} max={150} step={1} onChange={v => setParams(p => ({...p, gridRows: parseInt(v)}))} colorClass="text-orange-600" />}
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <ControlGroup label="X-Pitch" value={params.spacingX} min={1.5} max={30} step={0.5} onChange={v => setParams(p => ({...p, spacingX: parseFloat(v)}))} />
-                                        <ControlGroup label="Y-Pitch" value={params.spacingY} min={1.5} max={30} step={0.5} onChange={v => setParams(p => ({...p, spacingY: parseFloat(v)}))} />
-                                    </div>
-                                    {patternType !== 'grid' && <ControlGroup label={patternType === 'radial' ? "Rotation" : "Stagger"} value={patternType === 'radial' ? params.rotation : params.stagger} min={0} max={patternType === 'radial' ? 360 : 1} step={0.01} onChange={v => setParams(p => (patternType === 'radial' ? {...p, rotation: parseFloat(v)} : {...p, stagger: parseFloat(v)}))} />}
-                                    {patternType === 'radial' && <ControlGroup label="Mirror Array" value={params.mirrorCount} min={1} max={32} step={1} onChange={v => setParams(p => ({...p, mirrorCount: parseInt(v)}))} colorClass="text-emerald-600" />}
-                                </section>
-                                <section className="space-y-4 text-zinc-800">
-                                    <h2 className="text-[10px] font-black uppercase text-gray-400 border-b pb-1">5. Trimming Boundary</h2>
-                                    <div className="flex gap-2">
-                                        {BOUNDARY_SHAPES.map(s => (<button key={s} onClick={() => setBoundaryShape(s)} className={`flex-1 py-2 text-[9px] font-black uppercase rounded border ${boundaryShape === s ? 'bg-black text-white shadow-md' : 'bg-white text-zinc-300'}`}>{s}</button>))}
-                                    </div>
-                                    {boundaryShape === 'circle'
-                                        ? <ControlGroup label="Diameter" value={boundW} min={5} max={600} step={0.5} onChange={v => resizeBoundary('w', parseFloat(v))} colorClass="text-red-500" />
-                                        : <div className="grid grid-cols-2 gap-4">
-                                            <ControlGroup label="Width" value={boundW} min={5} max={600} step={0.5} onChange={v => resizeBoundary('w', parseFloat(v))} colorClass="text-red-500" />
-                                            <ControlGroup label="Height" value={boundH} min={5} max={600} step={0.5} onChange={v => resizeBoundary('h', parseFloat(v))} colorClass="text-red-500" />
-                                        </div>}
-                                    <div className="p-3 bg-zinc-50 rounded-lg border border-black/5 flex gap-1">
-                                        <button onClick={() => setTrimTarget('dots')} className={`flex-1 py-1.5 text-[8px] font-black rounded uppercase transition-all ${trimTarget === 'dots' ? 'bg-zinc-800 text-white shadow-sm' : 'bg-white text-zinc-300 border'}`}>Trim Dots</button>
-                                        <button onClick={() => setTrimTarget('curves')} className={`flex-1 py-1.5 text-[8px] font-black rounded uppercase transition-all ${trimTarget === 'curves' ? 'bg-zinc-800 text-white shadow-sm' : 'bg-white text-zinc-300 border'}`}>Trim Curves</button>
-                                    </div>
-                                </section>
-                                <div className="p-6 bg-black rounded-2xl text-white shadow-xl space-y-3 font-mono mt-6 mb-12 shrink-0">
-                                    <div className="flex justify-between items-end"><p className="text-[9px] text-zinc-500 uppercase font-black">Visible Perfs</p><p className="text-xl font-black italic">{stats.visibleDots.toLocaleString()}</p></div>
-                                    <div className="pt-2 border-t border-white/10 flex justify-between items-end"><p className="text-[9px] text-zinc-500 uppercase">Open Area</p><p className="text-sm font-bold">{stats.transparency}%</p></div>
+                                    {patternType !== 'grid' && <Param id="stagger" label="Row stagger" value={params.stagger} min={0} max={1} step={0.01} decimals={2} onChange={set('stagger')} />}
+                                    {patternType === 'splineGrid' && <p className="hint"><span className="legend" style={{ background: COLORS.splineA }}></span>Drag the amber control points to bend the rows.</p>}
+                                </>}
+                            </Section>
+
+                            <Section icon="circle-dot" title="Holes" summary={holeSummary} open={openSections.holes} onToggle={toggleSection('holes')}>
+                                <Segmented label="Size field" options={FIELDS} value={attractorMode} onChange={set('attractorMode')} />
+                                {fieldOn ? <div className="row2">
+                                    <Param id="max-dia" label="Max Ø" value={params.baseDiameter} min={0.5} max={10} step={0.1} decimals={2} unit="mm" typedMax={50} onChange={set('baseDiameter')} />
+                                    <Param id="min-dia" label="Min Ø" value={params.minDiameter} min={0.1} max={5} step={0.1} decimals={2} unit="mm" typedMax={50} onChange={set('minDiameter')} />
+                                </div> : <Param id="max-dia" label="Hole Ø" value={params.baseDiameter} min={0.5} max={10} step={0.1} decimals={2} unit="mm" typedMax={50} onChange={set('baseDiameter')} />}
+                                {fieldOn && <div className="row2">
+                                    <Param id="influence" label="Influence" value={params.influenceRange} min={5} max={200} step={1} unit="mm" typedMax={2000} onChange={set('influenceRange')} />
+                                    <Param id="falloff" label="Falloff" value={params.falloff} min={0.1} max={5} step={0.1} decimals={2} onChange={set('falloff')} />
+                                </div>}
+                                {fieldOn && <p className="hint"><span className="legend" style={{ background: COLORS[attractorMode] }}></span>
+                                    {attractorMode === 'radial' ? 'Holes shrink toward the dashed ring. Drag its handle to change the radius.' : attractorMode === 'curve' ? 'Holes shrink toward the curve. Drag its four control points.' : 'Holes shrink toward the line. Drag either end.'}
+                                </p>}
+                            </Section>
+
+                            <Section icon="square-dashed" title="Boundary" summary={boundarySummary} open={openSections.boundary} onToggle={toggleSection('boundary')}>
+                                <Segmented label="Boundary shape" inline options={SHAPES} value={boundaryShape} onChange={set('boundaryShape')} />
+                                {boundaryShape === 'circle'
+                                    ? <Param id="diameter" label="Diameter" value={boundW} min={5} max={600} step={0.5} unit="mm" typedMax={5000} onChange={v => resizeBoundary('w', v)} />
+                                    : <div className="row2">
+                                        <Param id="width" label="Width" value={boundW} min={5} max={600} step={0.5} unit="mm" typedMax={5000} onChange={v => resizeBoundary('w', v)} />
+                                        <Param id="height" label="Height" value={boundH} min={5} max={600} step={0.5} unit="mm" typedMax={5000} onChange={v => resizeBoundary('h', v)} />
+                                    </div>}
+                                <Segmented label="Trim mode" inline options={TRIMS} value={trimTarget} onChange={set('trimTarget')} />
+                                <p className="hint">{trimTarget === 'curves' ? 'Rows and rings are re-spaced so holes land exactly on the edge.' : 'Holes whose centre falls outside are removed; edge holes stay whole.'}</p>
+                            </Section>
+
+                            <Section icon="layers" title="Material" summary={`${fmt(params.thickness)} mm · ${finish.label}`} open={openSections.material} onToggle={toggleSection('material')}>
+                                <Param id="thickness" label="Sheet thickness" value={params.thickness} min={0.3} max={6} step={0.1} decimals={2} unit="mm" typedMax={50} onChange={set('thickness')} />
+                                <div className="swatches" role="radiogroup" aria-label="Finish">
+                                    {Object.entries(FINISHES).map(([key, f]) => (
+                                        <button key={key} role="radio" aria-checked={params.finish === key} title={f.name} className={`swatch ${params.finish === key ? 'on' : ''}`}
+                                            onClick={() => { set('finish')(key); setView(v => ({ ...v, mode: 'material' })); }}>
+                                            <span className="disc" style={{ background: `linear-gradient(135deg, ${f.sheet[0]}, ${f.sheet[1]} 60%, ${f.sheet[0]})` }}></span>{f.label}
+                                        </button>
+                                    ))}
                                 </div>
-                            </div>
+                                <p className="hint">{finish.name}, {fmt(finish.density)} g/cm³. Rule of thumb for punched sheet: hole Ø and the web between holes should be at least the sheet thickness.</p>
+                            </Section>
+
+                            {bgImage && <Section icon="image" title="Reference" summary={`${Math.round(params.bgOpacity * 100)}%`} open={openSections.reference} onToggle={toggleSection('reference')}>
+                                <div className="row2">
+                                    <Param id="ref-opacity" label="Opacity" value={Math.round(params.bgOpacity * 100)} min={0} max={100} step={1} decimals={0} unit="%" onChange={v => set('bgOpacity')(v / 100)} />
+                                    <Param id="ref-width" label="Width" value={params.bgWidth} min={5} max={600} step={1} unit="mm" typedMax={5000} onChange={set('bgWidth')} />
+                                </div>
+                                <p className="hint"><span className="legend" style={{ background: COLORS.image }}></span>Drag the image to move it; the blue corner handle scales it.</p>
+                                <div><button className="btn-ghost" onClick={() => setBgImage(null)}><Icon name="trash-2" size={14} />Remove image</button></div>
+                            </Section>}
                         </aside>
-                        <section ref={containerRef} className="flex-1 relative bg-[#eee] overflow-hidden canvas-container">
-                            {canvasDim.w > 0 && <canvas ref={canvasRef} width={Math.round(canvasDim.w * dpr)} height={Math.round(canvasDim.h * dpr)} style={{ width: canvasDim.w, height: canvasDim.h }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} className={`block mx-auto ${dragMode === 'canvasPan' ? 'cursor-grabbing' : 'cursor-crosshair'}`} />}
-                            {trimTarget === 'curves' && <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-amber-500/90 backdrop-blur-md text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-2 pointer-events-none">
-                                <Icon name="scissors" size={12} />
-                                <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap">Trim Curves Active</span>
-                            </div>}
-                            <div className="absolute bottom-6 left-6 right-6 flex flex-wrap items-end justify-between gap-4 pointer-events-none">
-                                <div className="flex flex-col gap-2">
-                                    <div className="bg-black/80 backdrop-blur-md text-white px-4 py-2 rounded-xl border border-white/10 shadow-2xl flex items-center gap-4 pointer-events-auto">
-                                        <div className="flex flex-col cursor-help group" onMouseEnter={() => setHoverHighlight('max')} onMouseLeave={() => setHoverHighlight('none')}><span className="text-[8px] font-black uppercase text-zinc-500 group-hover:text-orange-400 transition-colors">Master (Max)</span><span className="text-xs font-mono font-black italic group-hover:text-orange-400 transition-colors">{params.baseDiameter}mm</span></div>
-                                        <div className="w-[1px] h-6 bg-white/10"></div>
-                                        <div className="flex flex-col cursor-help group" onMouseEnter={() => setHoverHighlight('min')} onMouseLeave={() => setHoverHighlight('none')}><span className="text-[8px] font-black uppercase text-zinc-500 group-hover:text-blue-400 transition-colors">Min Set</span><span className="text-xs font-mono font-black italic text-blue-400 group-hover:text-blue-300 transition-colors">{params.minDiameter}mm</span></div>
+
+                        <section className="stage">
+                            <div className="table" ref={tableRef}>
+                                {canvasDim.w > 0 && <canvas ref={canvasRef} width={Math.round(canvasDim.w * dpr)} height={Math.round(canvasDim.h * dpr)} style={{ width: canvasDim.w, height: canvasDim.h, cursor: dragMode === 'canvasPan' || dragMode === 'pinch' ? 'grabbing' : undefined }}
+                                    onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+                                    onPointerLeave={() => { if (coordsRef.current) coordsRef.current.textContent = 'X        —  Y        —'; }} />}
+
+                                <div className="overlay view-pill">
+                                    <div className="pill" role="radiogroup" aria-label="View">
+                                        <button role="radio" aria-checked={view.mode === 'drawing'} className={view.mode === 'drawing' ? 'on' : ''} title="Drawing view (M)" onClick={() => setView(v => ({ ...v, mode: 'drawing' }))}>Drawing</button>
+                                        <button role="radio" aria-checked={view.mode === 'material'} className={view.mode === 'material' ? 'on' : ''} title="Material view (M)" onClick={() => setView(v => ({ ...v, mode: 'material' }))}>Material</button>
                                     </div>
-                                    <div className="bg-white/90 backdrop-blur-md p-3 rounded-xl shadow-xl border border-black/5 flex items-center gap-3"><Icon name="navigation" size={14} className="text-zinc-400" /><span className="text-[9px] font-black uppercase text-zinc-400 font-mono">Zoom: {Math.round(params.viewZoom * 10) / 10}x</span></div>
+                                    <div className="pill">
+                                        <button className={`icon ${view.guides ? '' : 'on'}`} aria-pressed={!view.guides} title={view.guides ? 'Hide guides and handles (H)' : 'Show guides and handles (H)'} onClick={() => setView(v => ({ ...v, guides: !v.guides }))}>
+                                            <Icon name={view.guides ? 'eye' : 'eye-off'} size={15} />
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="bg-red-500/90 backdrop-blur-md text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3">
-                                    <Icon name="maximize" size={16} />
-                                    <div className="flex flex-col"><span className="text-[8px] font-black uppercase tracking-widest opacity-70">Boundary Dimensions</span><span className="text-sm font-black font-mono leading-none">{boundaryShape === 'circle' ? `Ø ${boundW.toFixed(1)}` : `${boundW.toFixed(1)} × ${boundH.toFixed(1)}`} mm</span></div>
+
+                                {trimTarget === 'curves' && <div className="overlay trim-badge"><Icon name="scissors" size={12} />Trim curves active</div>}
+
+                                <div className={`overlay card ${cardOpen ? '' : 'collapsed'}`}>
+                                    <button className="card-head" aria-expanded={cardOpen} onClick={() => setCardOpen(o => !o)}>
+                                        <span className="card-title">Analysis</span>
+                                        {!cardOpen && <span className="card-sum">{stats.holes.toLocaleString()} holes · {stats.openArea.toFixed(1)}%</span>}
+                                        <Icon name="chevron-down" size={14} className={`chev ${cardOpen ? 'up' : ''}`} />
+                                    </button>
+                                    {cardOpen && <>
+                                        <dl className="stats">
+                                            {designation && <div><dt>Pattern</dt><dd>{designation}</dd></div>}
+                                            <div><dt>Holes</dt><dd>{stats.holes.toLocaleString()}</dd></div>
+                                            <div><dt>Open area</dt><dd>{stats.openArea.toFixed(1)} %</dd></div>
+                                            <div><dt>Hole Ø</dt><dd>
+                                                <span className="hl" title="Highlight the smallest holes" onMouseEnter={() => setHoverHighlight('min')} onMouseLeave={() => setHoverHighlight('none')}>{stats.minDia.toFixed(2)}</span>
+                                                {' – '}
+                                                <span className="hl" title="Highlight the largest holes" onMouseEnter={() => setHoverHighlight('max')} onMouseLeave={() => setHoverHighlight('none')}>{stats.maxDia.toFixed(2)}</span> mm
+                                            </dd></div>
+                                            <div><dt>Min web</dt><dd className={stats.minWeb < params.thickness ? 'warn' : ''}>{Number.isFinite(stats.minWeb) ? `${stats.minWeb.toFixed(2)} mm` : '—'}</dd></div>
+                                            <div><dt>Cut length</dt><dd>{stats.cutLength >= 1000 ? `${(stats.cutLength / 1000).toFixed(2)} m` : `${stats.cutLength.toFixed(0)} mm`}</dd></div>
+                                            <div><dt>Mass</dt><dd title={`${finish.name}, ${fmt(params.thickness)} mm`}>≈ {stats.mass >= 1000 ? `${(stats.mass / 1000).toFixed(2)} kg` : `${stats.mass.toFixed(0)} g`}</dd></div>
+                                        </dl>
+                                        <div className={`dfm ${issueCount ? 'warn' : 'ok'}`} title={issueCount ? 'Hover to highlight these holes' : undefined}
+                                            onMouseEnter={() => issueCount && setHoverHighlight('issues')} onMouseLeave={() => setHoverHighlight('none')}>
+                                            <Icon name={issueCount ? 'triangle-alert' : 'circle-check'} size={14} /><span>{dfmText}</span>
+                                        </div>
+                                    </>}
                                 </div>
+
+                                {toast && <div key={toast.id} className="toast" role="status">{toast.msg}</div>}
                             </div>
+
+                            <footer className="statusbar">
+                                <span className="coords" ref={coordsRef}>X        —  Y        —</span>
+                                <span className="scalebar" title="Scale"><i style={{ width: scaleLen * view.zoom }}></i>{fmt(scaleLen)} mm</span>
+                                <span className="sb-dim">{boundaryShape === 'circle' ? `Ø ${boundW.toFixed(1)}` : `${boundW.toFixed(1)} × ${boundH.toFixed(1)}`} mm</span>
+                                <span className="zoom">
+                                    <button className="icon-btn" title="Zoom out (−)" aria-label="Zoom out" onClick={() => zoomBy(0.8)}><Icon name="zoom-out" size={14} /></button>
+                                    <span>{view.zoom >= 10 ? view.zoom.toFixed(0) : view.zoom.toFixed(1)}×</span>
+                                    <button className="icon-btn" title="Zoom in (+)" aria-label="Zoom in" onClick={() => zoomBy(1.25)}><Icon name="zoom-in" size={14} /></button>
+                                    <button className="icon-btn" title="Fit boundary to view (F)" aria-label="Fit boundary to view" onClick={fitView}><Icon name="scan" size={14} /></button>
+                                </span>
+                            </footer>
                         </section>
-                    </main>
+                    </div>
                 </div>
             );
         };

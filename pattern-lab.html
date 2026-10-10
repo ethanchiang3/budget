@@ -123,7 +123,7 @@
         .seg button:hover { color: var(--fg); }
         .seg button.on { background: var(--raised); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--line); }
 
-        .swatches { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+        .swatches { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
         .swatch { display: grid; justify-items: center; gap: 6px; padding: 4px 0; border-radius: 8px; font-size: 10.5px; color: var(--muted); }
         .swatch .disc { width: 34px; height: 34px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--line-strong); }
         .swatch.on { color: var(--fg); font-weight: 600; }
@@ -221,7 +221,9 @@
             anodized: { label: 'Black', name: 'Black anodised aluminium', sheet: ['#4a4b4f', '#2a2b2e'], hole: '#09090a', density: 2.70 },
             stainless: { label: 'Steel', name: 'Stainless steel', sheet: ['#d4d7d9', '#9da2a6'], hole: '#16171a', density: 8.00 },
             brass: { label: 'Brass', name: 'Brass', sheet: ['#dfc98f', '#a98a45'], hole: '#1c1912', density: 8.50 },
-            powder: { label: 'White', name: 'White powder-coated steel', sheet: ['#f6f5f1', '#e0ded8'], hole: '#2b2b2b', density: 7.85 }
+            powder: { label: 'White', name: 'White powder-coated steel', sheet: ['#f6f5f1', '#e0ded8'], hole: '#2b2b2b', density: 7.85 },
+            // ABS：啞光、幾乎無金屬漸層；密度約 1.04–1.06 g/cm³
+            abs: { label: 'ABS', name: 'ABS plastic', sheet: ['#e3e2de', '#d3d1cc'], hole: '#1d1d1d', density: 1.05, plastic: true }
         };
         const COLORS = { boundary: '#ef4444', curve: '#3b82f6', line: '#eab308', radial: '#10b981', splineA: '#f59e0b', splineB: '#d97706', image: '#3b82f6' };
         // claude.ai Artifact 的 downloads capability 接受的副檔名；其他格式打包成 zip
@@ -1351,7 +1353,7 @@
             const boundarySummary = boundaryShape === 'circle' ? `Ø${boundW}` : `${SHAPES.find(s => s.value === boundaryShape).label} · ${boundW}×${boundH}`;
 
             const dfmText = issueCount === 0
-                ? `Clear for ${fmt(params.thickness)} mm sheet`
+                ? `Clear for ${fmt(params.thickness)} mm ${finish.plastic ? 'wall' : 'sheet'}`
                 : [stats.overlaps && `${stats.overlaps} holes overlap`, stats.small && `${stats.small} holes under Ø${fmt(params.thickness)}`, stats.tight && `${stats.tight} webs under ${fmt(params.thickness)} mm`].filter(Boolean).join(' · ');
 
             return (
@@ -1457,7 +1459,7 @@
                             </Section>
 
                             <Section icon="layers" title="Material" summary={`${fmt(params.thickness)} mm · ${finish.label}`} open={openSections.material} onToggle={toggleSection('material')}>
-                                <Param id="thickness" label="Sheet thickness" value={params.thickness} min={0.3} max={6} step={0.1} decimals={2} unit="mm" typedMax={50} onChange={set('thickness')} />
+                                <Param id="thickness" label={finish.plastic ? 'Wall thickness' : 'Sheet thickness'} value={params.thickness} min={0.3} max={6} step={0.1} decimals={2} unit="mm" typedMax={50} onChange={set('thickness')} />
                                 <div className="swatches" role="radiogroup" aria-label="Finish">
                                     {Object.entries(FINISHES).map(([key, f]) => (
                                         <button key={key} role="radio" aria-checked={params.finish === key} title={f.name} className={`swatch ${params.finish === key ? 'on' : ''}`}
@@ -1466,7 +1468,9 @@
                                         </button>
                                     ))}
                                 </div>
-                                <p className="hint">{finish.name}, {fmt(finish.density)} g/cm³. Rule of thumb for punched sheet: hole width and the web between holes should be at least the sheet thickness. Webs between non-round holes are approximate.</p>
+                                <p className="hint">{finish.name}, {fmt(finish.density)} g/cm³. {finish.plastic
+                                    ? 'Moulded ABS walls are typically 1.2–3.5 mm. The check below applies the same rule as for sheet (hole width and web at least the wall thickness); treat it as a starting point and confirm with your moulder.'
+                                    : 'Rule of thumb for punched sheet: hole width and the web between holes should be at least the sheet thickness.'} Webs between non-round holes are approximate.</p>
                             </Section>
 
                             {bgImage && <Section icon="image" title="Reference" summary={`${Math.round(params.bgOpacity * 100)}%`} open={openSections.reference} onToggle={toggleSection('reference')}>

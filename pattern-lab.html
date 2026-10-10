@@ -89,7 +89,7 @@
         .sec { border-bottom: 1px solid var(--line); }
         .sec-head { width: 100%; display: flex; align-items: center; gap: 10px; padding: 14px 16px; text-align: left; color: var(--fg); }
         .sec-head:hover { background: var(--tonal); }
-        .sec-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; }
+        .sec-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; white-space: nowrap; }
         .sec-sum { margin-left: auto; min-width: 0; font: 11px var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .chev { color: var(--faint); transition: transform 0.2s; }
         .chev.up { transform: rotate(180deg); }
@@ -207,6 +207,14 @@
             { value: 'rect', label: 'Rect', icon: 'rectangle-horizontal' }, { value: 'circle', label: 'Circle', icon: 'circle' }, { value: 'quad', label: 'Quad', icon: 'square-dashed' }
         ];
         const TRIMS = [{ value: 'dots', label: 'Trim dots' }, { value: 'curves', label: 'Trim curves', icon: 'scissors' }];
+        // 孔形：寬度由尺寸場決定，長度 = 寬度 × 長寬比（1× 為該形狀的標準形）
+        const HOLE_SHAPES = [
+            { value: 'round', label: 'Round' }, { value: 'slot', label: 'Slot' }, { value: 'ellipse', label: 'Ellipse' },
+            { value: 'rect', label: 'Rect' }, { value: 'hex', label: 'Hex' }, { value: 'tri', label: 'Tri' }
+        ];
+        // 奇數列的額外旋轉：鏡射（人字紋）、90°（編織紋）、180°（三角形上下交錯）
+        const ALTS = [{ value: 'off', label: 'Off' }, { value: 'mirror', label: 'Mirror' }, { value: 'quarter', label: '90°' }, { value: 'flip', label: '180°' }];
+        const ORIENTS = [{ value: 'fixed', label: 'Fixed' }, { value: 'field', label: 'Follow field' }, { value: 'radial', label: 'Radial' }];
         // 材質預覽：板材漸層、孔後襯底色、密度 (g/cm³) 用於估算重量
         const FINISHES = {
             aluminium: { label: 'Alu', name: 'Brushed aluminium', sheet: ['#e1e3e4', '#b3b7ba'], hole: '#18191b', density: 2.70 },
@@ -234,9 +242,10 @@
             boundarySplineB: [ {x: -150, y: 60}, {x: -60, y: 30}, {x: 60, y: 90}, {x: 150, y: 60} ],
             bgWidth: 200, bgOffsetX: 0, bgOffsetY: 0, bgOpacity: 0.5,
             bgColor: '#ffffff', color: '#1a1a1a',
-            thickness: 0.8, finish: 'aluminium'
+            thickness: 0.8, finish: 'aluminium',
+            holeShape: 'round', holeLength: 3, holeTilt: 0, holeOrient: 'fixed', holeCorner: 0.25, holeAlt: 'off', holeTwist: 0
         };
-        const ENUMS = { patternType: PATTERNS, attractorMode: FIELDS, boundaryShape: SHAPES, trimTarget: TRIMS };
+        const ENUMS = { patternType: PATTERNS, attractorMode: FIELDS, boundaryShape: SHAPES, trimTarget: TRIMS, holeShape: HOLE_SHAPES, holeOrient: ORIENTS, holeAlt: ALTS };
 
         // 讀入的設計檔（或 localStorage）只取已知欄位並檢查型別，缺的補預設值
         const sanitizeDesign = (raw) => {
@@ -319,11 +328,23 @@
             </div>
         );
 
-        const Segmented = ({ options, value, onChange, label, inline }) => (
+        // 孔形小圖示
+        const HoleGlyph = ({ shape }) => (
+            <svg width="24" height="17" viewBox="0 0 24 17" aria-hidden="true" style={{ fill: 'currentColor' }}>
+                {shape === 'round' && <circle cx="12" cy="8.5" r="5.5" />}
+                {shape === 'slot' && <rect x="2" y="4.5" width="20" height="8" rx="4" />}
+                {shape === 'ellipse' && <ellipse cx="12" cy="8.5" rx="10" ry="4.5" />}
+                {shape === 'rect' && <rect x="3" y="4" width="18" height="9" rx="1.5" />}
+                {shape === 'hex' && <polygon points="2,8.5 6.5,3.5 17.5,3.5 22,8.5 17.5,13.5 6.5,13.5" />}
+                {shape === 'tri' && <polygon points="12,2 20.5,14.5 3.5,14.5" />}
+            </svg>
+        );
+
+        const Segmented = ({ options, value, onChange, label, inline, glyphs }) => (
             <div className={`seg ${inline ? 'inline' : ''}`} role="radiogroup" aria-label={label}>
                 {options.map(o => (
                     <button key={o.value} role="radio" aria-checked={value === o.value} className={value === o.value ? 'on' : ''} onClick={() => onChange(o.value)}>
-                        {o.icon && <Icon name={o.icon} size={inline ? 14 : 17} />}<span>{o.label}</span>
+                        {glyphs && <HoleGlyph shape={o.value} />}{o.icon && <Icon name={o.icon} size={inline ? 14 : 17} />}<span>{o.label}</span>
                     </button>
                 ))}
             </div>
@@ -475,12 +496,57 @@
             for (let i = 0; i < n; i++) { const t = s + (i + offset) * step; if (t <= e + 1e-9) place(t); }
         };
 
+        // 孔的幾何：寬 w、長 l、角度 ang（螢幕座標、弧度）；六角形的長度為對角距
+        const hexInset = (w) => w / (2 * Math.sqrt(3));
+        const cornerRadius = (d, corner) => Math.min(corner * d.dia / 2, d.dia / 2, d.len / 2);
+        const holeArea = (d, shape, corner) => {
+            const w = d.dia, l = d.len;
+            if (shape === 'ellipse') return Math.PI * w * l / 4;
+            if (shape === 'slot') return Math.PI * w * w / 4 + w * (l - w);
+            if (shape === 'rect') { const cr = cornerRadius(d, corner); return w * l - (4 - Math.PI) * cr * cr; }
+            if (shape === 'hex') return w * (l - hexInset(w));
+            if (shape === 'tri') return 0.75 * w * l;
+            return Math.PI * w * w / 4;
+        };
+        const holePerimeter = (d, shape, corner) => {
+            const w = d.dia, l = d.len;
+            if (shape === 'ellipse') { const a = l / 2, b = w / 2; return Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b))); }
+            if (shape === 'slot') return Math.PI * w + 2 * (l - w);
+            if (shape === 'rect') return 2 * (w + l) - (8 - 2 * Math.PI) * cornerRadius(d, corner);
+            if (shape === 'hex') { const s = hexInset(w); return 4 * (l / 2 - s) + 4 * Math.sqrt(s * s + w * w / 4); }
+            if (shape === 'tri') return l + 2 * Math.sqrt(l * l / 4 + 2.25 * w * w);
+            return Math.PI * w;
+        };
+        // 三角形頂點：內切圓直徑 = w，底邊 = l（1× 為正三角形），頂點朝區域 -y
+        const triVerts = (w, l) => [[0, -w], [l / 2, w / 2], [-l / 2, w / 2]];
+        // 六角形頂點（孔的區域座標，x 沿長軸）
+        const hexVerts = (w, l) => { const L = l / 2, s = hexInset(w), h = w / 2; return [[L, 0], [L - s, h], [-(L - s), h], [-L, 0], [-(L - s), -h], [L - s, -h]]; };
+
+        // 以膠囊（線段 + 半徑）近似每個孔，求兩孔間的料寬
+        const segmentsCross = (a1, a2, b1, b2) => {
+            const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+            const d1 = o(a1, a2, b1), d2 = o(a1, a2, b2), d3 = o(b1, b2, a1), d4 = o(b1, b2, a2);
+            return d1 * d2 < 0 && d3 * d4 < 0;
+        };
+        const capsule = (d, shape) => {
+            if (shape === 'tri') return { a: d, b: d, r: Math.max(d.dia, Math.hypot(d.len / 2, d.dia / 2)) };
+            const e = Math.max(0, (d.len - d.dia) / 2); const ux = Math.cos(d.ang) * e, uy = Math.sin(d.ang) * e;
+            return { a: { x: d.x + ux, y: d.y + uy }, b: { x: d.x - ux, y: d.y - uy }, r: d.dia / 2 };
+        };
+        const capsuleGap = (p, q) => {
+            const seg = segmentsCross(p.a, p.b, q.a, q.b) ? 0 : Math.min(
+                distToSegment(p.a.x, p.a.y, q.a, q.b), distToSegment(p.b.x, p.b.y, q.a, q.b),
+                distToSegment(q.a.x, q.a.y, p.a, p.b), distToSegment(q.b.x, q.b.y, p.a, p.b));
+            return seg - p.r - q.r;
+        };
+
         // 每個孔與最近鄰孔之間的料寬 (web)；以空間網格加速
-        const nearestWebs = (dots) => {
+        const nearestWebs = (dots, shape) => {
             const n = dots.length; const webs = new Float64Array(n).fill(Infinity);
             if (n < 2) return webs;
             let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, maxD = 0;
-            dots.forEach(d => { minX = Math.min(minX, d.x); maxX = Math.max(maxX, d.x); minY = Math.min(minY, d.y); maxY = Math.max(maxY, d.y); maxD = Math.max(maxD, d.dia); });
+            dots.forEach(d => { minX = Math.min(minX, d.x); maxX = Math.max(maxX, d.x); minY = Math.min(minY, d.y); maxY = Math.max(maxY, d.y); maxD = Math.max(maxD, d.len); });
+            const caps = dots.map(d => capsule(d, shape));
             const cell = Math.max(maxD, 2 * Math.sqrt(Math.max((maxX - minX) * (maxY - minY), 1) / n), 0.5);
             const grid = new Map();
             const key = (gx, gy) => gx + ',' + gy;
@@ -492,8 +558,7 @@
                     if (!list) continue;
                     for (const j of list) {
                         if (j <= i) continue;
-                        const o = dots[j];
-                        const web = dist(d.x, d.y, o.x, o.y) - (d.dia + o.dia) / 2;
+                        const web = capsuleGap(caps[i], caps[j]);
                         if (web < webs[i]) webs[i] = web;
                         if (web < webs[j]) webs[j] = web;
                     }
@@ -522,7 +587,7 @@
             const [stored] = useState(loadStore);
             const [params, setParams] = useState(() => sanitizeDesign(stored.design));
             const [view, setView] = useState(() => ({ zoom: 4, panX: 0, panY: 0, mode: stored.mode === 'material' ? 'material' : 'drawing', guides: stored.guides !== false }));
-            const [openSections, setOpenSections] = useState(() => ({ array: true, holes: true, boundary: true, material: false, reference: true, ...(stored.sections || {}) }));
+            const [openSections, setOpenSections] = useState(() => ({ array: true, holes: true, shape: true, boundary: true, material: false, reference: true, ...(stored.sections || {}) }));
             const [cardOpen, setCardOpen] = useState(() => window.innerWidth >= 768);
             const [bgImage, setBgImage] = useState(null);
             const [canvasDim, setCanvasDim] = useState({ w: 0, h: 0 });
@@ -681,8 +746,9 @@
                 return pointInPolygon(x, y, q) || q.some((p, i) => distToSegment(x, y, p, q[(i + 1) % 4]) <= margin);
             };
 
-            const calculateDotSize = (x, y) => {
-                if (attractorMode === 'none') return params.baseDiameter;
+            // 尺寸場影響值 s：在吸引子上為 0、超出影響範圍為 1（已套用 Falloff）
+            const fieldS = (x, y) => {
+                if (attractorMode === 'none') return 1;
                 let dAtt = 0;
                 if (attractorMode === 'radial') dAtt = Math.abs(Math.sqrt(x*x + y*y) - params.attractorRadius);
                 else if (attractorMode === 'curve') {
@@ -696,16 +762,45 @@
                 } else if (attractorMode === 'line') {
                     dAtt = distToSegment(x, y, params.linePts[0], params.linePts[1]);
                 }
-                const t = Math.min(1, dAtt / params.influenceRange);
-                return params.minDiameter + (params.baseDiameter - params.minDiameter) * Math.pow(t, params.falloff);
+                return Math.pow(Math.min(1, dAtt / params.influenceRange), params.falloff);
             };
+            const sizeFromS = (s) => attractorMode === 'none' ? params.baseDiameter : params.minDiameter + (params.baseDiameter - params.minDiameter) * s;
 
-            // 產生所有可見圓點 {x, y, dia}；畫布、統計與匯出共用
+            // 孔的方向（螢幕座標弧度）：固定、沿尺寸場、或由圖案中心向外；Tilt 為逆時針偏移
+            const holeAngle = (x, y, row, s) => {
+                if (params.holeShape === 'round') return 0;
+                const odd = row % 2 !== 0;
+                let tilt = -(odd && params.holeAlt === 'mirror' ? -params.holeTilt : params.holeTilt) * Math.PI / 180;
+                if (odd && params.holeAlt === 'quarter') tilt -= Math.PI / 2;
+                if (odd && params.holeAlt === 'flip') tilt += Math.PI;
+                // 越靠近吸引子轉得越多（與孔徑共用同一條衰減曲線）
+                if (attractorMode !== 'none') tilt -= params.holeTwist * (1 - s) * Math.PI / 180;
+                if (params.holeOrient === 'radial') return Math.atan2(y, x) + tilt;
+                if (params.holeOrient === 'field') {
+                    if (attractorMode === 'radial') return Math.atan2(y, x) + Math.PI / 2 + tilt;
+                    if (attractorMode === 'line') { const [a, b] = params.linePts; return Math.atan2(b.y - a.y, b.x - a.x) + tilt; }
+                    if (attractorMode === 'curve') {
+                        const pts = params.cvs; const d2 = (t) => { const p = getBezierPoint(t, pts); return (p.x - x)**2 + (p.y - y)**2; };
+                        let best = 0; for (let i = 1; i <= 32; i++) if (d2(i / 32) < d2(best / 32)) best = i;
+                        let lo = Math.max(0, (best - 1) / 32), hi = Math.min(1, (best + 1) / 32);
+                        for (let k = 0; k < 20; k++) { const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3; if (d2(m1) < d2(m2)) hi = m2; else lo = m1; }
+                        const t = (lo + hi) / 2, it = 1 - t;
+                        const dx = 3*it*it*(pts[1].x - pts[0].x) + 6*it*t*(pts[2].x - pts[1].x) + 3*t*t*(pts[3].x - pts[2].x);
+                        const dy = 3*it*it*(pts[1].y - pts[0].y) + 6*it*t*(pts[2].y - pts[1].y) + 3*t*t*(pts[3].y - pts[2].y);
+                        return Math.atan2(dy, dx) + tilt;
+                    }
+                }
+                return tilt;
+            };
+            const lengthFactor = params.holeShape === 'round' ? 1 : params.holeLength * (params.holeShape === 'hex' ? 2 / Math.sqrt(3) : params.holeShape === 'tri' ? Math.sqrt(3) : 1);
+
+            // 產生所有可見孔 {x, y, dia(寬), len(長), ang}；畫布、統計與匯出共用
             const collectDots = () => {
-                const dots = [];
+                const dots = []; let row = 0;
                 const addDot = (x, y, bypassTrim = false) => {
                     if (!bypassTrim && !isInside(x, y)) return;
-                    dots.push({ x, y, dia: calculateDotSize(x, y) });
+                    const s = fieldS(x, y); const dia = sizeFromS(s);
+                    dots.push({ x, y, dia, len: dia * lengthFactor, ang: holeAngle(x, y, row, s) });
                 };
 
                 if (patternType === 'grid' || patternType === 'hexagonal') {
@@ -713,6 +808,7 @@
                     const vStep = hex ? params.spacingY * 0.866 : params.spacingY;
                     const x0 = -(params.gridCols - 1) / 2 * params.spacingX;
                     for (let j = 0; j < params.gridRows; j++) {
+                        row = j;
                         const y = (j - (params.gridRows - 1) / 2) * vStep;
                         const stagger = hex && j % 2 !== 0 ? params.stagger : 0;
                         if (trimTarget === 'curves') {
@@ -725,6 +821,7 @@
                 } else if (patternType === 'radial') {
                     const rot = (params.rotation * Math.PI) / 180;
                     for (let r = 1; r <= params.gridRows; r++) {
+                        row = r - 1;
                         const rad = r * params.spacingY;
                         const fullCount = Math.max(params.mirrorCount, Math.round((2 * Math.PI * rad / params.spacingX) / params.mirrorCount) * params.mirrorCount);
                         const ringDot = (a) => addDot(rad * Math.cos(a), rad * Math.sin(a), trimTarget === 'curves');
@@ -743,6 +840,7 @@
                 } else if (patternType === 'splineGrid') {
                     const nU = params.gridCols - 1; const nV = params.gridRows - 1;
                     for (let j = 0; j <= nV; j++) {
+                        row = j;
                         const v = j / nV;
                         const intermediatePts = params.boundarySplineA.map((pA, idx) => ({ x: pA.x * (1 - v) + params.boundarySplineB[idx].x * v, y: pA.y * (1 - v) + params.boundarySplineB[idx].y * v }));
                         let range = { start: 0, end: 1 };
@@ -765,12 +863,13 @@
                 return dots;
             };
 
-            // 可製造性分析：孔徑與料寬須 ≥ 板厚（沖孔經驗法則）
+            const holeArea_ = (d) => holeArea(d, params.holeShape, params.holeCorner);
+            // 可製造性分析：孔寬與料寬須 ≥ 板厚（沖孔經驗法則）
             const analyze = (dots) => {
-                const t = params.thickness; const webs = nearestWebs(dots);
+                const t = params.thickness; const webs = nearestWebs(dots, params.holeShape);
                 const issues = new Set(); let small = 0, tight = 0, overlaps = 0, minWeb = Infinity, holeArea = 0, cutLength = 0;
                 dots.forEach((d, i) => {
-                    holeArea += Math.PI * (d.dia / 2)**2; cutLength += Math.PI * d.dia;
+                    holeArea += holeArea_(d); cutLength += holePerimeter(d, params.holeShape, params.holeCorner);
                     if (webs[i] < minWeb) minWeb = webs[i];
                     if (d.dia < t - 1e-9) { small++; issues.add(i); }
                     if (webs[i] < 0) { overlaps++; issues.add(i); }
@@ -839,11 +938,28 @@
                     ctx.restore();
                 }
 
-                // 圓孔：材質模式下裁切在板材內，邊緣的孔會變成缺口
+                // 孔：一條路徑一次填色；材質模式下裁切在板材內，邊緣的孔會變成缺口
+                const shape = params.holeShape;
+                const traceHole = (d) => {
+                    const hx = X(d.x), hy = Y(d.y), w = d.dia * zoom, l = d.len * zoom, a = d.ang;
+                    const ux = Math.cos(a), uy = Math.sin(a);
+                    const P = (lx, ly) => [hx + lx * ux - ly * uy, hy + lx * uy + ly * ux];
+                    if (shape === 'round') { ctx.moveTo(hx + w / 2, hy); ctx.arc(hx, hy, w / 2, 0, Math.PI * 2); return; }
+                    if (shape === 'ellipse') { ctx.moveTo(...P(l / 2, 0)); ctx.ellipse(hx, hy, l / 2, w / 2, a, 0, Math.PI * 2); return; }
+                    if (shape === 'hex' || shape === 'tri') { (shape === 'hex' ? hexVerts : triVerts)(w, l).forEach(([lx, ly], i) => i ? ctx.lineTo(...P(lx, ly)) : ctx.moveTo(...P(lx, ly))); ctx.closePath(); return; }
+                    const hw = l / 2, hh = w / 2;
+                    const cr = shape === 'slot' ? hh : cornerRadius(d, params.holeCorner) * zoom;
+                    ctx.moveTo(...P(-hw + cr, -hh));
+                    ctx.lineTo(...P(hw - cr, -hh)); ctx.arc(...P(hw - cr, -hh + cr), cr, a - Math.PI / 2, a);
+                    ctx.lineTo(...P(hw, hh - cr)); ctx.arc(...P(hw - cr, hh - cr), cr, a, a + Math.PI / 2);
+                    ctx.lineTo(...P(-hw + cr, hh)); ctx.arc(...P(-hw + cr, hh - cr), cr, a + Math.PI / 2, a + Math.PI);
+                    ctx.lineTo(...P(-hw, -hh + cr)); ctx.arc(...P(-hw + cr, -hh + cr), cr, a + Math.PI, a + Math.PI * 1.5);
+                    ctx.closePath();
+                };
                 ctx.save();
                 if (material) { traceBoundary(); ctx.clip(); }
                 ctx.fillStyle = material ? finish.hole : params.color;
-                dots.forEach(d => { ctx.beginPath(); ctx.arc(X(d.x), Y(d.y), (d.dia / 2) * zoom, 0, Math.PI * 2); ctx.fill(); });
+                ctx.beginPath(); dots.forEach(traceHole); ctx.fill();
                 ctx.restore();
 
                 if (view.guides) {
@@ -903,7 +1019,7 @@
                     }
                     ctx.save();
                     ctx.strokeStyle = hoverHighlight === 'issues' ? tok('--bad') : hoverHighlight === 'max' ? '#f97316' : '#3b82f6'; ctx.lineWidth = 2;
-                    targets.slice(0, 400).forEach(d => { ctx.beginPath(); ctx.arc(X(d.x), Y(d.y), (d.dia / 2) * zoom + 4, 0, Math.PI*2); ctx.stroke(); });
+                    targets.slice(0, 400).forEach(d => { ctx.beginPath(); ctx.arc(X(d.x), Y(d.y), (Math.max(d.len, d.dia) / 2) * zoom + 4, 0, Math.PI*2); ctx.stroke(); });
                     ctx.restore();
                 }
             };
@@ -1057,7 +1173,15 @@
                 svg += `<g transform="translate(${n(-b.minX)}, ${n(-b.minY)})">`;
                 svg += `<g id="boundary" fill="none" stroke="#e11d48" stroke-width="0.1">${outline}</g>`;
                 svg += `<g id="holes" fill="${params.color}">`;
-                dots.forEach(d => { svg += `<circle cx="${d.x.toFixed(3)}" cy="${d.y.toFixed(3)}" r="${(d.dia/2).toFixed(3)}"/>`; });
+                const shape = params.holeShape;
+                dots.forEach(d => {
+                    const cx = n(d.x), cy = n(d.y), w = d.dia, l = d.len, deg = n(d.ang * 180 / Math.PI);
+                    const rot = deg ? ` transform="rotate(${deg} ${cx} ${cy})"` : '';
+                    if (shape === 'round') svg += `<circle cx="${cx}" cy="${cy}" r="${n(w / 2)}"/>`;
+                    else if (shape === 'ellipse') svg += `<ellipse cx="${cx}" cy="${cy}" rx="${n(l / 2)}" ry="${n(w / 2)}"${rot}/>`;
+                    else if (shape === 'hex' || shape === 'tri') svg += `<polygon points="${(shape === 'hex' ? hexVerts : triVerts)(w, l).map(([lx, ly]) => `${n(d.x + lx * Math.cos(d.ang) - ly * Math.sin(d.ang))},${n(d.y + lx * Math.sin(d.ang) + ly * Math.cos(d.ang))}`).join(' ')}"/>`;
+                    else { const r = shape === 'slot' ? w / 2 : cornerRadius(d, params.holeCorner); svg += `<rect x="${n(d.x - l / 2)}" y="${n(d.y - w / 2)}" width="${n(l)}" height="${n(w)}" rx="${n(r)}"${rot}/>`; }
+                });
                 svg += `</g></g></svg>`;
                 deliver(`${fileBase()}.svg`, new Blob([svg], { type: 'image/svg+xml' }), 'SVG drawing');
             };
@@ -1075,7 +1199,25 @@
                 } else {
                     L.push('0', 'CIRCLE', '8', 'BOUNDARY', '10', n(params.bCX), '20', n(-params.bCY), '30', '0', '40', n(params.bRad));
                 }
-                dots.forEach(d => L.push('0', 'CIRCLE', '8', 'HOLES', '10', n(d.x), '20', n(-d.y), '30', '0', '40', n(d.dia / 2)));
+                // 孔：圓用 CIRCLE；長孔與圓角矩形用帶 bulge 的閉合 POLYLINE（弧線精確）；橢圓以 72 段折線近似
+                const shape = params.holeShape;
+                const poly = (d, verts) => { // verts: [lx, ly, bulge]，孔的區域座標（Y 朝上、逆時針）
+                    const A = -d.ang, ux = Math.cos(A), uy = Math.sin(A), cx = d.x, cy = -d.y;
+                    L.push('0', 'POLYLINE', '8', 'HOLES', '66', '1', '10', '0', '20', '0', '30', '0', '70', '1');
+                    verts.forEach(([lx, ly, b]) => { L.push('0', 'VERTEX', '8', 'HOLES', '10', n(cx + lx * ux - ly * uy), '20', n(cy + lx * uy + ly * ux), '30', '0'); if (b) L.push('42', n(b)); });
+                    L.push('0', 'SEQEND', '8', 'HOLES');
+                };
+                const q = Math.tan(Math.PI / 8);
+                dots.forEach(d => {
+                    const w = d.dia, l = d.len, hw = l / 2, hh = w / 2;
+                    if (shape === 'round' || (shape === 'slot' && l - w < 1e-6)) return L.push('0', 'CIRCLE', '8', 'HOLES', '10', n(d.x), '20', n(-d.y), '30', '0', '40', n(w / 2));
+                    if (shape === 'slot') { const e = hw - hh; return poly(d, [[-e, -hh, 0], [e, -hh, 1], [e, hh, 0], [-e, hh, 1]]); }
+                    if (shape === 'hex' || shape === 'tri') return poly(d, (shape === 'hex' ? hexVerts : triVerts)(w, l).map(([lx, ly]) => [lx, -ly, 0]).reverse());
+                    if (shape === 'ellipse') return poly(d, Array.from({ length: 72 }, (_, i) => { const t = i / 72 * Math.PI * 2; return [hw * Math.cos(t), hh * Math.sin(t), 0]; }));
+                    const cr = cornerRadius(d, params.holeCorner);
+                    if (cr < 1e-6) return poly(d, [[-hw, -hh, 0], [hw, -hh, 0], [hw, hh, 0], [-hw, hh, 0]]);
+                    poly(d, [[-hw + cr, -hh, 0], [hw - cr, -hh, q], [hw, -hh + cr, 0], [hw, hh - cr, q], [hw - cr, hh, 0], [-hw + cr, hh, q], [-hw, hh - cr, 0], [-hw, -hh + cr, q]]);
+                });
                 L.push('0', 'ENDSEC', '0', 'EOF');
                 deliver(`${fileBase()}.dxf`, new Blob([L.join('\r\n') + '\r\n'], { type: 'application/dxf' }), 'DXF drawing');
             };
@@ -1083,8 +1225,12 @@
             // 孔位表：mm、Y 軸朝上、原點在圖案中心（與 DXF 相同）
             const exportCSV = () => {
                 setMenu(null);
-                const rows = ['hole,x_mm,y_mm,diameter_mm'];
-                dots.forEach((d, i) => rows.push(`${i + 1},${d.x.toFixed(3)},${(-d.y).toFixed(3)},${d.dia.toFixed(3)}`));
+                // 角度：逆時針、Y 朝上，與 DXF 相同
+                const rows = ['hole,x_mm,y_mm,shape,width_mm,length_mm,angle_deg'];
+                dots.forEach((d, i) => {
+                    let deg = -d.ang * 180 / Math.PI; deg = ((deg + 180) % 360 + 360) % 360 - 180;
+                    rows.push(`${i + 1},${d.x.toFixed(3)},${(-d.y).toFixed(3)},${params.holeShape},${d.dia.toFixed(3)},${d.len.toFixed(3)},${deg.toFixed(2)}`);
+                });
                 deliver(`${fileBase()}.csv`, new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }), 'Hole table');
             };
 
@@ -1154,12 +1300,12 @@
             const stats = useMemo(() => {
                 const area = getArea();
                 const finish = FINISHES[params.finish] || FINISHES.aluminium;
-                let minDia = Infinity, maxDia = 0;
-                dots.forEach(d => { if (d.dia < minDia) minDia = d.dia; if (d.dia > maxDia) maxDia = d.dia; });
+                let minDia = Infinity, maxDia = 0, minLen = Infinity, maxLen = 0;
+                dots.forEach(d => { minDia = Math.min(minDia, d.dia); maxDia = Math.max(maxDia, d.dia); minLen = Math.min(minLen, d.len); maxLen = Math.max(maxLen, d.len); });
                 return {
                     holes: dots.length,
                     openArea: area > 0 ? analysis.holeArea / area * 100 : 0,
-                    minDia: dots.length ? minDia : 0, maxDia,
+                    minDia: dots.length ? minDia : 0, maxDia, minLen: dots.length ? minLen : 0, maxLen,
                     minWeb: analysis.minWeb, small: analysis.small, tight: analysis.tight, overlaps: analysis.overlaps,
                     cutLength: analysis.cutLength,
                     mass: Math.max(0, area - analysis.holeArea) * params.thickness / 1000 * finish.density
@@ -1184,6 +1330,8 @@
 
             // 穿孔板業界標示：R = 圓孔、T = 60° 交錯孔距、U = 直排孔距
             const designation = (() => {
+                const shapeLabel = HOLE_SHAPES.find(h => h.value === params.holeShape).label;
+                if (params.holeShape !== 'round') return dots.length ? `${shapeLabel} ${fmt(stats.maxDia, 1)}×${fmt(stats.maxLen, 1)}` : null;
                 if (patternType !== 'grid' && patternType !== 'hexagonal') return null;
                 const d = fieldOn ? `${fmt(stats.minDia, 1)}–${fmt(stats.maxDia, 1)}` : fmt(params.baseDiameter);
                 const square = Math.abs(params.spacingX - params.spacingY) < 1e-6;
@@ -1191,8 +1339,15 @@
                 return square && Math.abs(params.stagger - 0.5) < 1e-6 ? `R${d} T${fmt(params.spacingX)}` : `R${d} staggered`;
             })();
 
-            const arraySummary = designation || (patternType === 'radial' ? `Radial · ${params.gridRows} rings` : `Spline · ${params.gridCols}×${params.gridRows}`);
+            const arraySummary = (params.holeShape === 'round' && designation) || (patternType === 'radial' ? `Radial · ${params.gridRows} rings` : `Spline · ${params.gridCols}×${params.gridRows}`);
             const holeSummary = fieldOn ? `${FIELDS.find(f => f.value === attractorMode).label} · Ø${fmt(params.minDiameter)}–${fmt(params.baseDiameter)}` : `Ø${fmt(params.baseDiameter)}`;
+            const roundHoles = params.holeShape === 'round';
+            const orientLabel = ORIENTS.find(o => o.value === params.holeOrient).label;
+            const shapeSummary = roundHoles ? 'Round' : `${HOLE_SHAPES.find(h => h.value === params.holeShape).label} ${fmt(params.holeLength, 1)}× · ${params.holeOrient === 'fixed' ? `${fmt(params.holeTilt, 0)}°` : orientLabel}${params.holeAlt !== 'off' ? ` · alt ${ALTS.find(a => a.value === params.holeAlt).label}` : ''}`;
+            const orientHint = params.holeOrient === 'fixed' ? 'Every hole is turned by the same angle.'
+                : params.holeOrient === 'radial' ? 'Holes point outward from the pattern centre. Tilt adds an offset.'
+                : fieldOn ? `Holes line up along the ${FIELDS.find(f => f.value === attractorMode).label.toLowerCase()} field. Tilt adds an offset.`
+                : 'Choose a size field under Holes and the holes will line up along it. Until then, Tilt applies.';
             const boundarySummary = boundaryShape === 'circle' ? `Ø${boundW}` : `${SHAPES.find(s => s.value === boundaryShape).label} · ${boundW}×${boundH}`;
 
             const dfmText = issueCount === 0
@@ -1271,6 +1426,24 @@
                                 </p>}
                             </Section>
 
+                            <Section icon="shapes" title="Hole shape" summary={shapeSummary} open={openSections.shape} onToggle={toggleSection('shape')}>
+                                <Segmented label="Hole shape" glyphs options={HOLE_SHAPES} value={params.holeShape} onChange={set('holeShape')} />
+                                {!roundHoles && <>
+                                    <div className="row2">
+                                        <Param id="hole-length" label="Length" value={params.holeLength} min={1} max={8} step={0.1} decimals={2} unit="×" typedMax={40} onChange={set('holeLength')} />
+                                        <Param id="hole-tilt" label="Tilt" value={params.holeTilt} min={-90} max={90} step={1} decimals={1} unit="°" onChange={set('holeTilt')} />
+                                    </div>
+                                    {params.holeShape === 'rect' && <Param id="hole-corner" label="Corner radius" value={Math.round(params.holeCorner * 100)} min={0} max={100} step={1} decimals={0} unit="%" onChange={v => set('holeCorner')(v / 100)} />}
+                                    <Segmented label="Orientation" inline options={ORIENTS} value={params.holeOrient} onChange={set('holeOrient')} />
+                                    {fieldOn && <Param id="hole-twist" label="Field twist" value={params.holeTwist} min={-180} max={180} step={1} decimals={1} unit="°" onChange={set('holeTwist')} />}
+                                    <div className="param">
+                                        <span className="param-label">Alternate rows</span>
+                                        <Segmented label="Alternate rows" inline options={ALTS} value={params.holeAlt} onChange={set('holeAlt')} />
+                                    </div>
+                                    <p className="hint">{orientHint}{fieldOn && params.holeTwist ? ' Field twist turns holes further the closer they sit to the field.' : ''} Alternate rows: Mirror gives herringbone, 90° basket weave, 180° flips triangles. Largest hole: {fmt(stats.maxDia)} × {fmt(stats.maxLen)} mm.</p>
+                                </>}
+                            </Section>
+
                             <Section icon="square-dashed" title="Boundary" summary={boundarySummary} open={openSections.boundary} onToggle={toggleSection('boundary')}>
                                 <Segmented label="Boundary shape" inline options={SHAPES} value={boundaryShape} onChange={set('boundaryShape')} />
                                 {boundaryShape === 'circle'
@@ -1293,7 +1466,7 @@
                                         </button>
                                     ))}
                                 </div>
-                                <p className="hint">{finish.name}, {fmt(finish.density)} g/cm³. Rule of thumb for punched sheet: hole Ø and the web between holes should be at least the sheet thickness.</p>
+                                <p className="hint">{finish.name}, {fmt(finish.density)} g/cm³. Rule of thumb for punched sheet: hole width and the web between holes should be at least the sheet thickness. Webs between non-round holes are approximate.</p>
                             </Section>
 
                             {bgImage && <Section icon="image" title="Reference" summary={`${Math.round(params.bgOpacity * 100)}%`} open={openSections.reference} onToggle={toggleSection('reference')}>
@@ -1337,11 +1510,12 @@
                                             {designation && <div><dt>Pattern</dt><dd>{designation}</dd></div>}
                                             <div><dt>Holes</dt><dd>{stats.holes.toLocaleString()}</dd></div>
                                             <div><dt>Open area</dt><dd>{stats.openArea.toFixed(1)} %</dd></div>
-                                            <div><dt>Hole Ø</dt><dd>
+                                            <div><dt>{roundHoles ? 'Hole Ø' : 'Hole width'}</dt><dd>
                                                 <span className="hl" title="Highlight the smallest holes" onMouseEnter={() => setHoverHighlight('min')} onMouseLeave={() => setHoverHighlight('none')}>{stats.minDia.toFixed(2)}</span>
                                                 {' – '}
                                                 <span className="hl" title="Highlight the largest holes" onMouseEnter={() => setHoverHighlight('max')} onMouseLeave={() => setHoverHighlight('none')}>{stats.maxDia.toFixed(2)}</span> mm
                                             </dd></div>
+                                            {!roundHoles && <div><dt>Hole length</dt><dd>{stats.minLen.toFixed(2)} – {stats.maxLen.toFixed(2)} mm</dd></div>}
                                             <div><dt>Min web</dt><dd className={stats.minWeb < params.thickness ? 'warn' : ''}>{Number.isFinite(stats.minWeb) ? `${stats.minWeb.toFixed(2)} mm` : '—'}</dd></div>
                                             <div><dt>Cut length</dt><dd>{stats.cutLength >= 1000 ? `${(stats.cutLength / 1000).toFixed(2)} m` : `${stats.cutLength.toFixed(0)} mm`}</dd></div>
                                             <div><dt>Mass</dt><dd title={`${finish.name}, ${fmt(params.thickness)} mm`}>≈ {stats.mass >= 1000 ? `${(stats.mass / 1000).toFixed(2)} kg` : `${stats.mass.toFixed(0)} g`}</dd></div>

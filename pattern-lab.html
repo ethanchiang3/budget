@@ -801,15 +801,12 @@
             return { label, area, count };
         };
 
-        // NURBS 面的分割：每個面再沿等參數線切成 nu × nv 塊（以三角形重心的參數判斷）
-        const labelFaces = (model, nu, nv) => {
-            const T = model.T, c = model.cuv, label = new Int32Array(T), map = new Map(), area = [], count = [], face = [];
+        // CAD 面的分割：每個面就是一個曲面
+        const labelFaces = (model) => {
+            const T = model.T, label = new Int32Array(T), map = new Map(), area = [], count = [], face = [];
             for (let t = 0; t < T; t++) {
-                const f = model.triFace[t], b = model.faceInfo[f]?.box;
-                const u = (c[t * 6] + c[t * 6 + 2] + c[t * 6 + 4]) / 3, v = (c[t * 6 + 1] + c[t * 6 + 3] + c[t * 6 + 5]) / 3;
-                const iu = b ? clamp(Math.floor((u - b[0]) / ((b[1] - b[0]) || 1) * nu), 0, nu - 1) : 0, iv = b ? clamp(Math.floor((v - b[2]) / ((b[3] - b[2]) || 1) * nv), 0, nv - 1) : 0;
-                const k = (f * nu + iu) * nv + iv;
-                let id = map.get(k); if (id === undefined) { id = area.length; map.set(k, id); area.push(0); count.push(0); face.push(f); }
+                const f = model.triFace[t];
+                let id = map.get(f); if (id === undefined) { id = area.length; map.set(f, id); area.push(0); count.push(0); face.push(f); }
                 label[t] = id; area[id] += model.fa[t]; count[id]++;
             }
             return { label, area, count, face };
@@ -2844,8 +2841,6 @@
             }, [tess]);
             // 步驟 2：分割（NURBS 面＋等參數線，或依夾角）與選取
             const [splitMode, setSplitMode] = useState('face');
-            const [isoU, setIsoU] = useState(1);
-            const [isoV, setIsoV] = useState(1);
             const [crease, setCrease] = useState(30);
             // 選取以 3D 點 {p, n} 記錄，重新網格化後仍指向同一個曲面
             const [seeds, setSeeds] = useState([]);
@@ -2879,7 +2874,7 @@
                 const m = buildModel(tessellated.tri, modelSrc.name);
                 return tessellated.triFace ? { ...m, triFace: tessellated.triFace, cuv: tessellated.cuv, faceInfo: tessellated.info } : m;
             }, [tessellated]);
-            const labels = useMemo(() => !model ? null : model.triFace && splitMode === 'face' ? labelFaces(model, isoU, isoV) : attachFaces(model, labelPatches(model, crease)), [model, crease, splitMode, isoU, isoV]);
+            const labels = useMemo(() => !model ? null : model.triFace && splitMode === 'face' ? labelFaces(model) : attachFaces(model, labelPatches(model, crease)), [model, crease, splitMode]);
             const seedTris = useMemo(() => model ? seeds.map(sd => nearestTri(model, sd.p, sd.n)) : [], [model, seeds]);
             const selectedIds = useMemo(() => new Set(labels ? seedTris.filter(t => t >= 0).map(t => labels.label[t]) : []), [labels, seedTris]);
             const splitGeom = useMemo(() => model && labels ? splitLines(model, labels) : null, [model, labels]);
@@ -2902,7 +2897,7 @@
             // 換模型：網格化參數回到預設、選取重設
             const loadSource = (src, seedList = []) => {
                 const t = autoTess(src);
-                setModelSrc(src); setUnit('mm'); setTess(t); setTessApplied(t); setSeeds(seedList); setSplitMode(src.kind === 'nurbs' ? 'face' : 'angle'); setIsoU(1); setIsoV(1); fittedRef.current = false;
+                setModelSrc(src); setUnit('mm'); setTess(t); setTessApplied(t); setSeeds(seedList); setSplitMode(src.kind === 'nurbs' ? 'face' : 'angle'); fittedRef.current = false;
             };
             const loadSample = (key) => loadDelaunator().then(() => {
                 const smp = SAMPLES[key], faces = smp.make(), [f, u, v] = smp.seed, r = faces[f].S.eval(u, v);
@@ -3994,11 +3989,8 @@
 
                             <Section step={2} title="Split" summary={labels ? `${nSurf.toLocaleString()} surface${nSurf === 1 ? '' : 's'}${selectedIds.size ? ` · ${selectedIds.size} selected` : ''}` : ''} open={openSections.split} onToggle={toggleSection('split')}>
                                 {isNurbs && <Segmented label="Split by" inline tight options={SPLITS} value={splitMode} onChange={setSplitMode} />}
-                                {isNurbs && splitMode === 'face' ? <div className="row2">
-                                    <Param id="iso-u" label="U splits" value={isoU} min={1} max={12} step={1} decimals={0} unit="×" typedMax={64} onChange={v => setIsoU(Math.round(v))} />
-                                    <Param id="iso-v" label="V splits" value={isoV} min={1} max={12} step={1} decimals={0} unit="×" typedMax={64} onChange={v => setIsoV(Math.round(v))} />
-                                </div> : <Param id="crease" label="Split angle" value={crease} min={5} max={90} step={1} decimals={0} unit="°" onChange={setCrease} />}
-                                <p className="hint">{isNurbs && splitMode === 'face' ? 'Each face from the CAD file is its own surface; U and V splits cut every face along its isocurves into equal parameter strips.' : 'Neighbouring faces that bend more than the split angle become separate surfaces; tangent faces merge into one.'} Grey lines in the 3D view show the result.</p>
+                                {!(isNurbs && splitMode === 'face') && <Param id="crease" label="Split angle" value={crease} min={5} max={90} step={1} decimals={0} unit="°" onChange={setCrease} />}
+                                <p className="hint">{isNurbs && splitMode === 'face' ? 'Each face from the CAD file is its own surface. Use Crease angle to merge tangent faces, such as fillets, into one.' : 'Neighbouring faces that bend more than the split angle become separate surfaces; tangent faces merge into one.'} Grey lines in the 3D view show the result.</p>
                                 <div className={`surface-card ${selectedIds.size ? '' : 'empty'}`}>
                                     {selectedIds.size ? <>
                                         <dl className="facts">

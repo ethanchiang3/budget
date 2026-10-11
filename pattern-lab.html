@@ -672,7 +672,7 @@
         }));
 
         const UNITS = [{ value: 'mm', label: 'mm', k: 1 }, { value: 'cm', label: 'cm', k: 10 }, { value: 'in', label: 'inch', k: 25.4 }];
-        const UNWRAPS = [{ value: 'conformal', label: 'BFF' }, { value: 'top', label: 'Top view' }, { value: 'planar', label: 'Planar' }, { value: 'cylinder', label: 'Cylinder' }];
+        const UNWRAPS = [{ value: 'slim', label: 'Min stretch' }, { value: 'conformal', label: 'BFF' }, { value: 'top', label: 'Top view' }, { value: 'planar', label: 'Planar' }, { value: 'cylinder', label: 'Cylinder' }];
         const SPLITS = [{ value: 'face', label: 'CAD faces' }, { value: 'angle', label: 'Crease angle' }];
         const UP_AXES = [{ value: 'z', label: 'Z up' }, { value: 'y', label: 'Y up' }];
         // 上視圖的畫面座標軸：往 -up 看時，畫面右方與上方對應的模型方向
@@ -1072,6 +1072,129 @@
             return alignToInit(U, init, lt, null);
         };
 
+        // SLIM（Rabinovich et al. 2017, Scalable Locally Injective Mappings）：最小化對稱 Dirichlet 能量
+        //   E = Σ A·(σ1² + σ2² + σ1⁻² + σ2⁻²)，拉長與壓縮同樣受罰 → 面積與形狀一起接近 3D 原樣（Blender 的 Minimum Stretch）
+        // 每一輪：局部（每個三角形的最近旋轉與重新加權）→ 全域（加權最小平方，PCG）→ 不翻面的線搜尋；從 BFF／LSCM 的結果出發
+        const slimSolve = (P, lt, init, budgetMs = 1500, maxIter = 60) => {
+            const n = P.length / 3, m = lt.length / 3, t0 = performance.now();
+            // 1) 每個三角形在自己平面上的梯度算子（頂點值 → ∂/∂x、∂/∂y）
+            const gx = new Float64Array(m * 3), gy = new Float64Array(m * 3), A = new Float64Array(m);
+            let A3 = 0;
+            for (let t = 0; t < m; t++) {
+                const ia = lt[t * 3], ib = lt[t * 3 + 1], ic = lt[t * 3 + 2];
+                const e = [P[ib * 3] - P[ia * 3], P[ib * 3 + 1] - P[ia * 3 + 1], P[ib * 3 + 2] - P[ia * 3 + 2]];
+                const f = [P[ic * 3] - P[ia * 3], P[ic * 3 + 1] - P[ia * 3 + 1], P[ic * 3 + 2] - P[ia * 3 + 2]];
+                const L = Math.hypot(e[0], e[1], e[2]), nr = [e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]], A2 = Math.hypot(nr[0], nr[1], nr[2]);
+                if (L < 1e-12 || A2 < 1e-14) continue;
+                const e1 = [e[0] / L, e[1] / L, e[2] / L], nn = [nr[0] / A2, nr[1] / A2, nr[2] / A2];
+                const e2 = [nn[1] * e1[2] - nn[2] * e1[1], nn[2] * e1[0] - nn[0] * e1[2], nn[0] * e1[1] - nn[1] * e1[0]];
+                const q = [[0, 0], [L, 0], [f[0] * e1[0] + f[1] * e1[1] + f[2] * e1[2], f[0] * e2[0] + f[1] * e2[1] + f[2] * e2[2]]];
+                for (let i = 0; i < 3; i++) { const j = q[(i + 1) % 3], k = q[(i + 2) % 3]; gx[t * 3 + i] = -(k[1] - j[1]) / A2; gy[t * 3 + i] = (k[0] - j[0]) / A2; }
+                A[t] = A2 / 2; A3 += A[t];
+            }
+            // 2) 起點：等比縮放到 3D 面積；若整體是鏡像（det < 0）先翻 v，最後再翻回
+            const X = Float64Array.from(init);
+            const jac = (x, t, out) => { let a = 0, b = 0, c = 0, d = 0; for (let i = 0; i < 3; i++) { const v = lt[t * 3 + i], u = x[v * 2], w = x[v * 2 + 1]; a += u * gx[t * 3 + i]; b += u * gy[t * 3 + i]; c += w * gx[t * 3 + i]; d += w * gy[t * 3 + i]; } out[0] = a; out[1] = b; out[2] = c; out[3] = d; return out; };
+            const J = new Float64Array(4);
+            let detSum = 0; for (let t = 0; t < m; t++) if (A[t]) { jac(X, t, J); detSum += A[t] * (J[0] * J[3] - J[1] * J[2]); }
+            const mirror = detSum < 0; if (mirror) for (let i = 0; i < n; i++) X[i * 2 + 1] = -X[i * 2 + 1];
+            const sc = Math.sqrt(A3 / Math.max(Math.abs(detSum), 1e-12)); for (let i = 0; i < n * 2; i++) X[i] *= sc;
+            const energy = (x) => {
+                let E = 0;
+                for (let t = 0; t < m; t++) {
+                    if (!A[t]) continue; jac(x, t, J);
+                    const det = J[0] * J[3] - J[1] * J[2]; if (!(det > 0)) return Infinity;
+                    const f2 = J[0] * J[0] + J[1] * J[1] + J[2] * J[2] + J[3] * J[3];
+                    E += A[t] * (f2 + f2 / (det * det)); // ‖J‖² + ‖J⁻¹‖²（2×2：‖J⁻¹‖² = ‖J‖² / det²）
+                }
+                return E;
+            };
+            let E = energy(X);
+            if (!Number.isFinite(E)) return null; // 起點已有翻面：SLIM 需要單射的起點
+            const Wa = new Float64Array(m), Wb = new Float64Array(m), Wd = new Float64Array(m), Rt = new Float64Array(m * 4);
+            const Y = new Float64Array(n * 2), R = new Float64Array(n * 2), Z = new Float64Array(n * 2), Pp = new Float64Array(n * 2), Q = new Float64Array(n * 2), D = new Float64Array(n * 2);
+            // 不固定任何頂點：加一點以頂點面積加權、拉回目前位置的近端項 μ·M，系統就是正定的，也不會在固定點附近留下扭曲
+            const mass = new Float64Array(n); for (let t = 0; t < m; t++) for (let i = 0; i < 3; i++) mass[lt[t * 3 + i]] += A[t] / 3;
+            let mu = 0;
+            // K·x：每個三角形的 3×3 Laplacian（梯度內積）乘上 2×2 權重 [a b; b d]
+            const mulK = (x, y) => {
+                y.fill(0);
+                for (let t = 0; t < m; t++) {
+                    if (!A[t]) continue;
+                    const a = Wa[t], b = Wb[t], d = Wd[t];
+                    let su = 0, sv = 0, tu = 0, tv = 0;
+                    for (let i = 0; i < 3; i++) { const v = lt[t * 3 + i]; su += gx[t * 3 + i] * x[v * 2]; sv += gx[t * 3 + i] * x[v * 2 + 1]; tu += gy[t * 3 + i] * x[v * 2]; tv += gy[t * 3 + i] * x[v * 2 + 1]; }
+                    for (let i = 0; i < 3; i++) {
+                        const v = lt[t * 3 + i], g1 = gx[t * 3 + i], g2 = gy[t * 3 + i];
+                        y[v * 2] += g1 * (a * su + b * sv) + g2 * (a * tu + b * tv);
+                        y[v * 2 + 1] += g1 * (b * su + d * sv) + g2 * (b * tu + d * tv);
+                    }
+                }
+                for (let v = 0; v < n; v++) { y[v * 2] += mu * mass[v] * x[v * 2]; y[v * 2 + 1] += mu * mass[v] * x[v * 2 + 1]; }
+            };
+            const pre = new Float64Array(n * 3); // 每個頂點 2×2 區塊的反矩陣（block Jacobi）
+            for (let it = 0; it < maxIter; it++) {
+                // 局部：SVD → 最近旋轉 R 與權重 W² = U·diag(w1², w2²)·Uᵀ，w² = (σ − σ⁻³)/(σ − 1)
+                for (let t = 0; t < m; t++) {
+                    if (!A[t]) continue; jac(X, t, J);
+                    const e = (J[0] + J[3]) / 2, f = (J[0] - J[3]) / 2, g = (J[2] + J[1]) / 2, h = (J[2] - J[1]) / 2;
+                    const qq = Math.hypot(e, h), rr = Math.hypot(f, g), s1 = qq + rr, s2 = qq - rr;
+                    const a1 = Math.atan2(g, f), a2 = Math.atan2(h, e), phi = (a2 + a1) / 2;
+                    const w = (s) => Math.abs(s - 1) < 1e-6 ? 4 : (s - Math.pow(s, -3)) / (s - 1);
+                    const w1 = w(s1), w2 = w(Math.max(s2, 1e-8)), c = Math.cos(phi), s = Math.sin(phi);
+                    Wa[t] = A[t] * (w1 * c * c + w2 * s * s); Wb[t] = A[t] * (w1 - w2) * c * s; Wd[t] = A[t] * (w1 * s * s + w2 * c * c);
+                    const ca = Math.cos(a2), sa = Math.sin(a2); Rt[t * 4] = ca; Rt[t * 4 + 1] = -sa; Rt[t * 4 + 2] = sa; Rt[t * 4 + 3] = ca;
+                }
+                // 全域：K·x = Σ Gᵀ·W²·R（以目前的 X 為起點的 PCG；線搜尋保證下降，不需要解得很精確）
+                const B = new Float64Array(n * 2);
+                for (let t = 0; t < m; t++) {
+                    if (!A[t]) continue;
+                    const a = Wa[t], b = Wb[t], d = Wd[t], r11 = Rt[t * 4], r12 = Rt[t * 4 + 1], r21 = Rt[t * 4 + 2], r22 = Rt[t * 4 + 3];
+                    const mx1 = a * r11 + b * r21, mx2 = b * r11 + d * r21, my1 = a * r12 + b * r22, my2 = b * r12 + d * r22;
+                    for (let i = 0; i < 3; i++) { const v = lt[t * 3 + i]; B[v * 2] += gx[t * 3 + i] * mx1 + gy[t * 3 + i] * my1; B[v * 2 + 1] += gx[t * 3 + i] * mx2 + gy[t * 3 + i] * my2; }
+                }
+                pre.fill(0);
+                for (let t = 0; t < m; t++) {
+                    if (!A[t]) continue;
+                    for (let i = 0; i < 3; i++) { const v = lt[t * 3 + i], l = gx[t * 3 + i] ** 2 + gy[t * 3 + i] ** 2; pre[v * 3] += Wa[t] * l; pre[v * 3 + 1] += Wb[t] * l; pre[v * 3 + 2] += Wd[t] * l; }
+                }
+                // μ：相對於剛度對角線很小（只是讓平移有唯一解）
+                let dsum = 0, msum = 0; for (let v = 0; v < n; v++) { dsum += pre[v * 3] + pre[v * 3 + 2]; msum += 2 * mass[v]; } mu = 1e-4 * dsum / (msum || 1);
+                for (let v = 0; v < n; v++) { pre[v * 3] += mu * mass[v]; pre[v * 3 + 2] += mu * mass[v]; B[v * 2] += mu * mass[v] * X[v * 2]; B[v * 2 + 1] += mu * mass[v] * X[v * 2 + 1]; }
+                const applyPre = (r, z) => { for (let v = 0; v < n; v++) { const a = pre[v * 3], b = pre[v * 3 + 1], d = pre[v * 3 + 2], det = a * d - b * b || 1; z[v * 2] = (d * r[v * 2] - b * r[v * 2 + 1]) / det; z[v * 2 + 1] = (a * r[v * 2 + 1] - b * r[v * 2]) / det; } };
+                Y.set(X); mulK(Y, Q); for (let i = 0; i < n * 2; i++) R[i] = B[i] - Q[i];
+                applyPre(R, Z); Pp.set(Z);
+                let rz = 0, b2 = 0; for (let i = 0; i < n * 2; i++) { rz += R[i] * Z[i]; b2 += B[i] * B[i]; }
+                for (let k = 0; k < 200 && rz > 1e-7 * b2; k++) {
+                    mulK(Pp, Q); let pq = 0; for (let i = 0; i < n * 2; i++) pq += Pp[i] * Q[i];
+                    const al = rz / (pq || 1e-30); for (let i = 0; i < n * 2; i++) { Y[i] += al * Pp[i]; R[i] -= al * Q[i]; }
+                    applyPre(R, Z); let rz2 = 0; for (let i = 0; i < n * 2; i++) rz2 += R[i] * Z[i];
+                    const be = rz2 / rz; rz = rz2; for (let i = 0; i < n * 2; i++) Pp[i] = Z[i] + be * Pp[i];
+                }
+                // 線搜尋：先算出不會讓任何三角形翻面的最大步長，再回溯直到能量下降
+                for (let i = 0; i < n * 2; i++) D[i] = Y[i] - X[i];
+                let amax = 1;
+                const Jd = new Float64Array(4);
+                for (let t = 0; t < m; t++) {
+                    if (!A[t]) continue; jac(X, t, J); jac(D, t, Jd);
+                    // det(J + α·Jd) = c0 + c1·α + c2·α²
+                    const c0 = J[0] * J[3] - J[1] * J[2], c2 = Jd[0] * Jd[3] - Jd[1] * Jd[2], c1 = J[0] * Jd[3] + Jd[0] * J[3] - J[1] * Jd[2] - Jd[1] * J[2];
+                    let root = Infinity;
+                    if (Math.abs(c2) < 1e-16) { if (c1 < 0) root = -c0 / c1; }
+                    else { const disc = c1 * c1 - 4 * c2 * c0; if (disc >= 0) { const sq = Math.sqrt(disc); for (const r of [(-c1 - sq) / (2 * c2), (-c1 + sq) / (2 * c2)]) if (r > 0 && r < root) root = r; } }
+                    if (root < amax) amax = root;
+                }
+                let alpha = Math.min(1, 0.9 * amax), En = Infinity;
+                for (let k = 0; k < 24; k++) { for (let i = 0; i < n * 2; i++) Y[i] = X[i] + alpha * D[i]; En = energy(Y); if (En < E) break; alpha /= 2; }
+                if (!(En < E)) break;
+                X.set(Y); const dE = (E - En) / E; E = En;
+                if (dE < 1e-4 || performance.now() - t0 > budgetMs) break;
+            }
+            if (mirror) for (let i = 0; i < n; i++) X[i * 2 + 1] = -X[i * 2 + 1];
+            for (let i = 0; i < n * 2; i++) if (!Number.isFinite(X[i])) return null;
+            return X;
+        };
+
         // 展開後的平面曲面：查詢網格、外框、Path2D、拉伸統計
         const buildUVPatch = (model, tris, uv) => {
             const m = tris.length;
@@ -1080,15 +1203,27 @@
             const ox = (minX + maxX) / 2, oy = (minY + maxY) / 2;
             for (let i = 0; i < m * 3; i++) { uv[i * 2] -= ox; uv[i * 2 + 1] -= oy; }
             minX -= ox; maxX -= ox; minY -= oy; maxY -= oy;
-            const invDen = new Float64Array(m); let area = 0, area3D = 0; const ratios = [];
+            const invDen = new Float64Array(m); let area = 0, area3D = 0; const ratios = [], ovals = [];
+            // 每個三角形：平面 → 3D 的度量 G = JᵀJ；孔要「在零件上」維持原樣，平面上就得先套 G^(-1/2)（只拉伸、不旋轉）
+            // G 依面積平均到頂點，孔中心再以重心座標內插：細長三角形的極端值不會讓單一個孔走樣
+            const gV = new Float64Array(model.V * 4), T9 = model.tri;
             for (let i = 0; i < m; i++) {
                 const q = i * 6; const den = (uv[q + 2] - uv[q]) * (uv[q + 5] - uv[q + 1]) - (uv[q + 4] - uv[q]) * (uv[q + 3] - uv[q + 1]);
                 invDen[i] = den ? 1 / den : 0;
                 const a = Math.abs(den) / 2, a3 = model.fa[tris[i]]; area += a; area3D += a3;
                 if (a3 > 0) ratios.push([a / a3, a3]);
+                if (den && a3 > 0) {
+                    const o = tris[i] * 9, du1 = uv[q + 2] - uv[q], dv1 = uv[q + 3] - uv[q + 1], du2 = uv[q + 4] - uv[q], dv2 = uv[q + 5] - uv[q + 1];
+                    let g11 = 0, g12 = 0, g22 = 0;
+                    for (let c = 0; c < 3; c++) { const e1 = T9[o + 3 + c] - T9[o + c], e2 = T9[o + 6 + c] - T9[o + c], pu = (e1 * dv2 - e2 * dv1) / den, pv = (e2 * du1 - e1 * du2) / den; g11 += pu * pu; g12 += pu * pv; g22 += pv * pv; }
+                    const tr = (g11 + g22) / 2, df = Math.hypot((g11 - g22) / 2, g12), l1 = tr + df, l2 = Math.max(tr - df, 1e-12);
+                    ovals.push([Math.sqrt(l1 / l2), a3]);
+                    for (let k = 0; k < 3; k++) { const v = model.vIndex[tris[i] * 3 + k] * 4; gV[v] += a3 * g11; gV[v + 1] += a3 * g12; gV[v + 2] += a3 * g22; gV[v + 3] += a3; }
+                }
             }
-            ratios.sort((p, q) => p[0] - q[0]);
-            const quant = (f) => { let acc = 0; for (const [r, w] of ratios) { acc += w; if (acc >= f * area3D) return r; } return ratios.length ? ratios[ratios.length - 1][0] : 1; };
+            ratios.sort((p, q) => p[0] - q[0]); ovals.sort((p, q) => p[0] - q[0]);
+            const quantOf = (list) => (f) => { let acc = 0; for (const [r, w] of list) { acc += w; if (acc >= f * area3D) return r; } return list.length ? list[list.length - 1][0] : 1; };
+            const quant = quantOf(ratios);
             const W = Math.max(maxX - minX, 1e-6), H = Math.max(maxY - minY, 1e-6);
             let cell = Math.max(Math.sqrt(area / Math.max(m, 1)) * 1.5, 1e-3);
             while ((W / cell) * (H / cell) > 250000) cell *= 1.5;
@@ -1144,7 +1279,7 @@
             for (let i = 0; i < edges.length; i += 4) { edgePath.moveTo(edges[i], edges[i + 1]); edgePath.lineTo(edges[i + 2], edges[i + 3]); }
             return {
                 tris: Int32Array.from(tris), uv, invDen, inP, area, area3D, origin: { x: ox, y: oy }, fillRule,
-                bounds: { minX, maxX, minY, maxY }, stretch: [quant(0.05) - 1, quant(0.95) - 1],
+                bounds: { minX, maxX, minY, maxY }, stretch: [quant(0.05) - 1, quant(0.95) - 1], oval: quantOf(ovals)(0.95) - 1, gV, model,
                 grid: { minX, minY, cell, cols, rows, cells }, edges: Float32Array.from(edges), edges3D: Float32Array.from(edges3D), fillPath, edgePath
             };
         };
@@ -1223,7 +1358,7 @@
                 const d = v3.dot(ref, N); const e2 = v3.norm([ref[0] - d * N[0], ref[1] - d * N[1], ref[2] - d * N[2]]); const e1 = v3.cross(e2, N);
                 let U = new Float64Array(n * 2);
                 for (let l = 0; l < n; l++) { const p = pt(l); U[l * 2] = v3.dot(p, e1); U[l * 2 + 1] = -v3.dot(p, e2); }
-                if (method === 'conformal') {
+                if (method === 'conformal' || method === 'slim') {
                     // 封閉曲面（沒有邊界）無法一片攤平；LSCM 結果面積比離譜時也視為失敗，改用平面投影
                     let open = false; tris.forEach(t => { for (let k = 0; k < 3; k++) { const nb = model.adj[t * 3 + k]; if (nb < 0 || !inSel[nb]) open = true; } });
                     const sane = (W) => { let a = 0; for (let i = 0; i < lt.length; i += 3) { const p0 = lt[i] * 2, p1 = lt[i + 1] * 2, p2 = lt[i + 2] * 2; a += Math.abs((W[p1] - W[p0]) * (W[p2 + 1] - W[p0 + 1]) - (W[p2] - W[p0]) * (W[p1 + 1] - W[p0 + 1])) / 2; } const r = a / area; return Number.isFinite(r) && r > 0.25 && r < 4; };
@@ -1232,10 +1367,23 @@
                     else { const B = bffSolve(P, lt, U); if (B && sane(B)) { U = B; solver = 'bff'; } else { const L2 = lscmSolve(P, lt, U); if (sane(L2)) { U = L2; solver = 'lscm'; } else { fallback = true; why = 'failed'; } } }
                     // 兩端開口的管狀面（圓柱側面）BFF 打不開，LSCM 會壓成環形：提示改用 Cylinder
                     if (solver !== 'bff') { const ev = eigSym3(C).values; tube = Math.hypot(...mean) / area < 0.9 && ev[0] / (ev[0] + ev[1] + ev[2]) < 0.02; }
+                    // Min stretch：以保角結果為起點跑 SLIM，面積與形狀的變形一起降到最低；結果轉回原本的方向
+                    if (method === 'slim' && solver) { const S2 = slimSolve(P, lt, U, 1500); if (S2 && sane(S2)) { U = alignToInit(S2, U, lt, null); solver = 'slim'; } }
                 }
                 for (let i = 0; i < tris.length; i++) for (let k = 0; k < 3; k++) { const l = lt[i * 3 + k]; uv[i * 6 + k * 2] = U[l * 2]; uv[i * 6 + k * 2 + 1] = U[l * 2 + 1]; }
             }
             return { ...buildUVPatch(model, tris, uv), method: fallback ? 'planar' : method, fallback, why, solver, tube, projected: method === 'top', skipped, maxSlope, up };
+        };
+
+        // True-size holes：孔中心的度量 G（頂點平均後以重心座標內插）→ G^(-1/2) = Σ λ^(-1/2)·e·eᵀ，回傳 [p, q, r]
+        const holeStretch = (patch, hit) => {
+            const t = patch.tris[hit.i], gV = patch.gV, vI = patch.model.vIndex, b = [hit.b0, hit.b1, hit.b2];
+            let g11 = 0, g12 = 0, g22 = 0;
+            for (let k = 0; k < 3; k++) { const v = vI[t * 3 + k] * 4, w = gV[v + 3]; if (!(w > 0)) return null; g11 += b[k] * gV[v] / w; g12 += b[k] * gV[v + 1] / w; g22 += b[k] * gV[v + 2] / w; }
+            const tr = (g11 + g22) / 2, df = Math.hypot((g11 - g22) / 2, g12), l1 = tr + df, l2 = tr - df;
+            if (!(l2 > 1e-12)) return null;
+            const th = 0.5 * Math.atan2(2 * g12, g11 - g22), c = Math.cos(th), s = Math.sin(th), k1 = 1 / Math.sqrt(l1), k2 = 1 / Math.sqrt(l2);
+            return [k1 * c * c + k2 * s * s, (k1 - k2) * c * s, k1 * s * s + k2 * c * c];
         };
 
         // 平面座標 → 所在三角形與重心座標
@@ -2471,7 +2619,15 @@
         };
 
         // 在 ctx 上加入一個孔的路徑；X/Y 把 mm 轉成畫面座標，zoom 為每 mm 的像素
+        // d.aff = [p, q, r]：True-size holes 的對稱 2×2 拉伸 [p q; q r]，以孔中心為原點；畫布在加入路徑時就套用目前的變換
         const traceHolePath = (ctx, d, X, Y, zoom, shape, corner) => {
+            if (!d.aff) return traceHoleShape(ctx, d, X, Y, zoom, shape, corner);
+            const [p, q, r] = d.aff, hx = X(d.x), hy = Y(d.y);
+            ctx.save(); ctx.transform(p, q, q, r, hx - p * hx - q * hy, hy - q * hx - r * hy);
+            traceHoleShape(ctx, d, X, Y, zoom, shape, corner);
+            ctx.restore();
+        };
+        const traceHoleShape = (ctx, d, X, Y, zoom, shape, corner) => {
             const hx = X(d.x), hy = Y(d.y), w = d.dia * zoom, l = d.len * zoom, a = d.ang;
             const ux = Math.cos(a), uy = Math.sin(a);
             const P = (lx, ly) => [hx + lx * ux - ly * uy, hy + lx * uy + ly * ux];
@@ -2486,6 +2642,22 @@
             ctx.lineTo(...P(-hw + cr, hh)); ctx.arc(...P(-hw + cr, hh - cr), cr, a + Math.PI / 2, a + Math.PI);
             ctx.lineTo(...P(-hw, -hh + cr)); ctx.arc(...P(-hw + cr, -hh + cr), cr, a + Math.PI, a + Math.PI * 1.5);
             ctx.closePath();
+        };
+
+        // 孔的外形折線（平面座標、Y 朝下，含旋轉與 d.aff）；DXF 匯出拉伸後的孔時用（弧線無法以 bulge 表示）
+        const holeOutline = (d, shape, corner) => {
+            const w = d.dia, l = d.len, hw = l / 2, hh = w / 2, loc = [];
+            const arc = (cx, cy, r, a0, a1, k) => { for (let i = 0; i < k; i++) { const t = a0 + (a1 - a0) * i / k; loc.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]); } };
+            if (shape === 'round') arc(0, 0, hh, 0, Math.PI * 2, 72);
+            else if (shape === 'ellipse') for (let i = 0; i < 72; i++) { const t = i / 72 * Math.PI * 2; loc.push([hw * Math.cos(t), hh * Math.sin(t)]); }
+            else if (shape === 'hex' || shape === 'tri') loc.push(...(shape === 'hex' ? hexVerts : triVerts)(w, l));
+            else {
+                const cr = shape === 'slot' ? hh : cornerRadius(d, corner), H = Math.PI / 2;
+                if (cr < 1e-6) loc.push([-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]);
+                else { arc(hw - cr, -hh + cr, cr, -H, 0, 18); arc(hw - cr, hh - cr, cr, 0, H, 18); arc(-hw + cr, hh - cr, cr, H, 2 * H, 18); arc(-hw + cr, -hh + cr, cr, 2 * H, 3 * H, 18); }
+            }
+            const ux = Math.cos(d.ang), uy = Math.sin(d.ang), [p, q, r] = d.aff || [1, 0, 1];
+            return loc.map(([lx, ly]) => { const ox = lx * ux - ly * uy, oy = lx * uy + ly * ux; return [d.x + p * ox + q * oy, d.y + q * ox + r * oy]; });
         };
 
         // 3D 檢視：three.js 場景與軌道相機；點選曲面；穿孔以較深的同材質顯示（不鏤空）
@@ -2831,8 +3003,10 @@
             // 選取以 3D 點 {p, n} 記錄，重新網格化後仍指向同一個曲面
             const [seeds, setSeeds] = useState([]);
             // 步驟 3：展開
-            // 預設用 BFF：保持孔形與邊長，任何曲面都能展開
-            const [unwrapMode, setUnwrapMode] = useState('conformal');
+            // 預設用 Min stretch（SLIM）：孔的大小與間距最接近 3D 原樣
+            const [unwrapMode, setUnwrapMode] = useState('slim');
+            // 依展開的局部變形預先拉伸每個孔，讓孔在零件上是設計的大小與形狀
+            const [trueSize, setTrueSize] = useState(() => stored.trueSize !== false);
             // 上視圖投影的最大坡度：更陡的面不開孔
             const [maxSlope, setMaxSlope] = useState(60);
             // 選了曲面就把圖案等比套合上去
@@ -2906,9 +3080,9 @@
 
             // 自動儲存（僅存在此瀏覽器）
             useEffect(() => {
-                const t = setTimeout(() => saveStore({ design: params, mode: view.mode, guides: view.guides, sections: openSections, mode3D, autoFit }), 300);
+                const t = setTimeout(() => saveStore({ design: params, mode: view.mode, guides: view.guides, sections: openSections, mode3D, autoFit, trueSize }), 300);
                 return () => clearTimeout(t);
-            }, [params, view.mode, view.guides, openSections, mode3D, autoFit]);
+            }, [params, view.mode, view.guides, openSections, mode3D, autoFit, trueSize]);
 
             // 復原 / 重做：350ms 內的連續變更（拖曳、滑桿）合併為一步
             const historyRef = useRef({ past: [], future: [], base: null, timer: 0, skip: false });
@@ -3570,10 +3744,13 @@
                 dots.forEach(d => {
                     const cx = n(d.x), cy = n(d.y), w = d.dia, l = d.len, deg = n(d.ang * 180 / Math.PI);
                     const rot = deg ? ` transform="rotate(${deg} ${cx} ${cy})"` : '';
-                    if (shape === 'round') out += `<circle cx="${cx}" cy="${cy}" r="${n(w / 2)}"/>`;
-                    else if (shape === 'ellipse') out += `<ellipse cx="${cx}" cy="${cy}" rx="${n(l / 2)}" ry="${n(w / 2)}"${rot}/>`;
-                    else if (shape === 'hex' || shape === 'tri') out += `<polygon points="${(shape === 'hex' ? hexVerts : triVerts)(w, l).map(([lx, ly]) => `${n(d.x + lx * Math.cos(d.ang) - ly * Math.sin(d.ang))},${n(d.y + lx * Math.sin(d.ang) + ly * Math.cos(d.ang))}`).join(' ')}"/>`;
-                    else { const r = shape === 'slot' ? w / 2 : cornerRadius(d, params.holeCorner); out += `<rect x="${n(d.x - l / 2)}" y="${n(d.y - w / 2)}" width="${n(l)}" height="${n(w)}" rx="${n(r)}"${rot}/>`; }
+                    let el;
+                    if (shape === 'round') el = `<circle cx="${cx}" cy="${cy}" r="${n(w / 2)}"/>`;
+                    else if (shape === 'ellipse') el = `<ellipse cx="${cx}" cy="${cy}" rx="${n(l / 2)}" ry="${n(w / 2)}"${rot}/>`;
+                    else if (shape === 'hex' || shape === 'tri') el = `<polygon points="${(shape === 'hex' ? hexVerts : triVerts)(w, l).map(([lx, ly]) => `${n(d.x + lx * Math.cos(d.ang) - ly * Math.sin(d.ang))},${n(d.y + lx * Math.sin(d.ang) + ly * Math.cos(d.ang))}`).join(' ')}"/>`;
+                    else { const r = shape === 'slot' ? w / 2 : cornerRadius(d, params.holeCorner); el = `<rect x="${n(d.x - l / 2)}" y="${n(d.y - w / 2)}" width="${n(l)}" height="${n(w)}" rx="${n(r)}"${rot}/>`; }
+                    if (d.aff) { const [p, q, r] = d.aff, k = (v) => +v.toFixed(6); el = `<g transform="matrix(${k(p)} ${k(q)} ${k(q)} ${k(r)} ${n(d.x - p * d.x - q * d.y)} ${n(d.y - q * d.x - r * d.y)})">${el}</g>`; }
+                    out += el;
                 });
                 return out;
             };
@@ -3625,6 +3802,11 @@
                 const q = Math.tan(Math.PI / 8);
                 dots.forEach(d => {
                     const w = d.dia, l = d.len, hw = l / 2, hh = w / 2;
+                    if (d.aff) { // 拉伸後的孔：折線外形
+                        L.push('0', 'POLYLINE', '8', 'HOLES', '66', '1', '10', '0', '20', '0', '30', '0', '70', '1');
+                        holeOutline(d, shape, params.holeCorner).forEach(([x, y]) => L.push('0', 'VERTEX', '8', 'HOLES', '10', n(x + ox), '20', n(-(y + oy)), '30', '0'));
+                        return L.push('0', 'SEQEND', '8', 'HOLES');
+                    }
                     if (shape === 'round' || (shape === 'slot' && l - w < 1e-6)) return L.push('0', 'CIRCLE', '8', 'HOLES', '10', n(d.x + ox), '20', n(-(d.y + oy)), '30', '0', '40', n(w / 2));
                     if (shape === 'slot') { const e = hw - hh; return poly(d, [[-e, -hh, 0], [e, -hh, 1], [e, hh, 0], [-e, hh, 1]]); }
                     if (shape === 'hex' || shape === 'tri') return poly(d, (shape === 'hex' ? hexVerts : triVerts)(w, l).map(([lx, ly]) => [lx, -ly, 0]).reverse());
@@ -3641,11 +3823,14 @@
             const exportCSV = () => {
                 setMenu(null);
                 // 角度：逆時針、Y 朝上，與 DXF 相同
-                const rows = ['hole,x_mm,y_mm,shape,width_mm,length_mm,angle_deg'];
+                // True-size holes：再加上平面上的拉伸矩陣 [xx xy; xy yy]（Y 朝上），孔的外形 = 矩陣 × 原本的孔
+                const st = dots.some(d => d.aff);
+                const rows = ['hole,x_mm,y_mm,shape,width_mm,length_mm,angle_deg' + (st ? ',stretch_xx,stretch_xy,stretch_yy' : '')];
                 const ox = uvPatch?.projected ? uvPatch.origin.x : 0, oy = uvPatch?.projected ? uvPatch.origin.y : 0;
                 dots.forEach((d, i) => {
                     let deg = -d.ang * 180 / Math.PI; deg = ((deg + 180) % 360 + 360) % 360 - 180;
-                    rows.push(`${i + 1},${(d.x + ox).toFixed(3)},${(-(d.y + oy)).toFixed(3)},${params.holeShape},${d.dia.toFixed(3)},${d.len.toFixed(3)},${deg.toFixed(2)}`);
+                    const [p, q, r] = d.aff || [1, 0, 1];
+                    rows.push(`${i + 1},${(d.x + ox).toFixed(3)},${(-(d.y + oy)).toFixed(3)},${params.holeShape},${d.dia.toFixed(3)},${d.len.toFixed(3)},${deg.toFixed(2)}` + (st ? `,${p.toFixed(5)},${(-q).toFixed(5)},${r.toFixed(5)}` : ''));
                 });
                 deliver(`${fileBase()}.csv`, new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }), 'Hole table');
             };
@@ -3665,7 +3850,9 @@
                     const du1 = uv[q + 2] - uv[q], dv1 = uv[q + 3] - uv[q + 1], du2 = uv[q + 4] - uv[q], dv2 = uv[q + 5] - uv[q + 1];
                     const det = du1 * dv2 - du2 * dv1 || 1;
                     const dPu = [0, 1, 2].map(c => (e1[c] * dv2 - e2[c] * dv1) / det), dPv = [0, 1, 2].map(c => (e2[c] * du1 - e1[c] * du2) / det);
-                    const axis = v3.norm([0, 1, 2].map(c => Math.cos(d.ang) * dPu[c] + Math.sin(d.ang) * dPv[c]));
+                    // 孔軸：平面上的方向（經 True-size 拉伸）映射到曲面上
+                    const [ap, aq, ar] = d.aff || [1, 0, 1], fx = ap * Math.cos(d.ang) + aq * Math.sin(d.ang), fy = aq * Math.cos(d.ang) + ar * Math.sin(d.ang);
+                    const axis = v3.norm([0, 1, 2].map(c => fx * dPu[c] + fy * dPv[c]));
                     const nrm = [model.fn[t * 3], model.fn[t * 3 + 1], model.fn[t * 3 + 2]];
                     const cut = uvPatch.projected ? uvPatch.up.map(c => -c) : nrm.map(c => -c);
                     rows.push([++k, ...p.map(f), ...nrm.map(f), ...axis.map(f), params.holeShape, d.dia.toFixed(3), d.len.toFixed(3), ...cut.map(f)].join(','));
@@ -3893,7 +4080,13 @@
             const dpr = window.devicePixelRatio || 1;
 
             // 圖案與分析只在設計變更時重算；平移縮放只重繪
-            const { dots, analysis } = useMemo(() => { const dots = engine.collectDots(); return { dots, analysis: engine.analyze(dots) }; }, [params, boundaryShape, uvPatch]);
+            const { dots, analysis } = useMemo(() => {
+                const raw = engine.collectDots();
+                // True-size holes：每個孔帶上孔中心的 G^(-1/2)，畫圖與匯出時以孔中心為原點套用
+                // 變形不到 0.1% 的孔（平坦處）維持原樣，DXF 仍輸出精確的圓
+                const dots = mode3D && uvPatch && trueSize ? raw.map(d => { const hit = uvLocate(uvPatch, d.x, d.y, 1e-4), aff = hit && holeStretch(uvPatch, hit); return aff && Math.max(Math.abs(aff[0] - 1), Math.abs(aff[1]), Math.abs(aff[2] - 1)) > 1e-3 ? { ...d, aff } : d; }) : raw;
+                return { dots, analysis: engine.analyze(dots) };
+            }, [params, boundaryShape, uvPatch, trueSize, mode3D]);
             const stats = useMemo(() => {
                 const area = getArea();
                 const finish = FINISHES[params.finish] || FINISHES.aluminium;
@@ -3950,23 +4143,30 @@
             // 投影時面積比 = cos(坡度)，孔在斜面上沿坡度方向拉長 1/cos 倍
             const slopeStretch = uvPatch?.projected ? Math.round((1 / Math.max(1 + uvPatch.stretch[0], 0.01) - 1) * 100) : 0;
             const areaWarp = uvPatch && !uvPatch.projected ? Math.max(Math.abs(uvPatch.stretch[0]), Math.abs(uvPatch.stretch[1])) : 0;
-            const layoutLabel = !uvPatch ? '' : (uvPatch.projected ? 'Top view' : uvPatch.solver === 'bff' ? 'BFF' : uvPatch.solver === 'lscm' ? 'LSCM' : UNWRAPS.find(u => u.value === uvPatch.method).label);
+            const layoutLabel = !uvPatch ? '' : (uvPatch.projected ? 'Top view' : uvPatch.solver === 'slim' ? 'Min stretch' : uvPatch.solver === 'bff' ? 'BFF' : uvPatch.solver === 'lscm' ? 'LSCM' : UNWRAPS.find(u => u.value === uvPatch.method).label);
+            // 孔在零件上的間距變化：面積比 r = 平面/3D，零件上的間距 ∝ 1/√r
+            const pitch = uvPatch ? [1 / Math.sqrt(Math.max(1 + uvPatch.stretch[1], 1e-6)) - 1, 1 / Math.sqrt(Math.max(1 + uvPatch.stretch[0], 1e-6)) - 1] : [0, 0];
+            const pitchWarp = Math.max(Math.abs(pitch[0]), Math.abs(pitch[1]));
+            const holeWarp = uvPatch && !trueSize && (areaWarp > 0.1 || uvPatch.oval > 0.15);
             const surfaceFacts = !uvPatch ? [] : [
                 ['Flat size', `${fmt(boundW, 1)} × ${fmt(boundH, 1)} mm`],
                 ['Layout', layoutLabel],
-                uvPatch.projected ? ['Hole stretch', slopeStretch >= 1 ? `up to +${slopeStretch}% on slopes` : 'none, flat from above', slopeStretch > 40] : ['Area change', `${pct(uvPatch.stretch[0])} … ${pct(uvPatch.stretch[1])}`, areaWarp > 0.1],
+                ...(trueSize ? [['Holes on the part', 'true size and shape'], ['Pitch on the part', `${pct(pitch[0])} … ${pct(pitch[1])}`, pitchWarp > 0.15]]
+                    : uvPatch.projected ? [['Hole stretch', slopeStretch >= 1 ? `up to +${slopeStretch}% on slopes` : 'none, flat from above', slopeStretch > 40]]
+                    : [['Area change', `${pct(uvPatch.stretch[0])} … ${pct(uvPatch.stretch[1])}`, areaWarp > 0.1], ['Hole shape', uvPatch.oval < 0.005 ? 'round' : `up to ${fmt(uvPatch.oval * 100, 0)}% oval`, uvPatch.oval > 0.15]]),
                 ...(uvPatch.projected && uvPatch.skipped > 0.005 ? [['Left solid', `${fmt(uvPatch.skipped * 100, 0)}%, steeper than ${fmt(uvPatch.maxSlope, 0)}°`], ['Perforated area', `${fmt(uvPatch.area3D / 100, uvPatch.area3D < 1000 ? 2 : 1)} cm²`]] : [])
             ];
             const surfaceNote = !uvPatch ? null
                 : uvPatch.why === 'closed' ? 'This selection is a closed surface, so it can’t be flattened in one piece and was projected flat instead. Select fewer faces, lower the split angle, or use Top view.'
-                : uvPatch.why === 'size' ? 'BFF handles up to 60,000 vertices, so this surface was projected flat. Raise Max edge in step 1, or select a smaller surface.'
+                : uvPatch.why === 'size' ? 'Flattening handles up to 60,000 vertices, so this surface was projected flat. Raise Max edge in step 1, or select a smaller surface.'
                 : uvPatch.why === 'flat' ? 'This surface is flat, so there is no cylinder to unroll. It was projected flat instead.'
-                : uvPatch.tube && !uvPatch.fallback ? 'This surface is a closed tube, so BFF can’t open it flat and it was squeezed into a ring. Cylinder unrolls it exactly.'
-                : uvPatch.fallback ? 'BFF couldn’t flatten this surface cleanly, so it was projected flat instead. Try splitting it into smaller surfaces.'
+                : uvPatch.tube && !uvPatch.fallback ? 'This surface is a closed tube, so it can’t open flat without a cut and was squeezed into a ring. Cylinder unrolls it exactly.'
+                : uvPatch.fallback ? 'This surface couldn’t be flattened cleanly, so it was projected flat instead. Try splitting it into smaller surfaces.'
                 : uvPatch.solver === 'lscm' ? 'This surface has more than one edge loop, so it was flattened with LSCM instead of BFF.'
-                : uvPatch.projected && slopeStretch > 40 ? 'Holes on the steep parts stretch along the slope. Lower Max slope to keep them round, or use BFF.'
-                : areaWarp > 0.1 ? 'Holes will look distorted on the part. Try another unwrap or a smaller surface.' : null;
-            const UNWRAP_HINTS = { top: 'Rows are laid out in plan view and each hole drops straight down onto the part.', planar: 'Projects onto the surface’s best-fit plane.', cylinder: 'Unrolls around the fitted cylinder axis; true cylinders keep their size.', conformal: 'Boundary First Flattening keeps hole shapes and edge lengths and spreads any area change.' };
+                : uvPatch.projected && slopeStretch > 40 && !trueSize ? 'Holes on the steep parts stretch along the slope. Turn on true-size holes, lower Max slope, or use Min stretch.'
+                : holeWarp ? `Holes will look distorted on the part. Turn on true-size holes${uvPatch.solver === 'slim' ? '' : ', or use Min stretch'}.`
+                : trueSize && pitchWarp > 0.15 ? `Every hole keeps its true size on the part. Only the spacing varies, by up to ${fmt(pitchWarp * 100, 0)}%, because this surface curves in two directions and can’t be flattened without some stretch.` : null;
+            const UNWRAP_HINTS = { slim: 'SLIM (scalable locally injective maps) spreads the stretch of a curved surface as evenly as possible, so hole sizes and spacing stay closest to the real part. Starts from BFF and never folds over.', top: 'Rows are laid out in plan view and each hole drops straight down onto the part.', planar: 'Projects onto the surface’s best-fit plane.', cylinder: 'Unrolls around the fitted cylinder axis; true cylinders keep their size.', conformal: 'Boundary First Flattening keeps every angle, so holes stay round, but on strongly curved surfaces their size changes.' };
             const selArea = labels ? [...selectedIds].reduce((a, id) => a + labels.area[id], 0) : 0;
             const nSurf = labels ? labels.area.length : 0;
             const srcTris = modelSrc?.kind === 'mesh' ? modelSrc.tri.length / 9 : 0;
@@ -4075,7 +4275,7 @@
                             </Section>
 
                             <Section step={3} title="Unwrap" summary={uvPatch ? `${layoutLabel} · ${fmt(boundW, 0)}×${fmt(boundH, 0)}` : ''} open={openSections.unwrap} onToggle={toggleSection('unwrap')}>
-                                <Segmented label="Unwrap method" inline tight cols={4} options={UNWRAPS} value={unwrapMode} onChange={setUnwrapMode} />
+                                <Segmented label="Unwrap method" inline tight cols={3} options={UNWRAPS} value={unwrapMode} onChange={setUnwrapMode} />
                                 <p className="hint">{UNWRAP_HINTS[unwrapMode]}</p>
                                 {(unwrapMode === 'top' || uvPatch?.projected) && <Param id="maxslope" label="Max slope" value={maxSlope} min={10} max={85} step={1} decimals={0} unit="°" onChange={setMaxSlope} />}
                                 {uvPatch ? <div className="surface-card">
@@ -4084,15 +4284,16 @@
                                     </dl>
                                     {surfaceNote && <p className="note"><Icon name="info" size={13} />{surfaceNote}</p>}
                                     <div className="btn-row">
-                                        {uvPatch.tube && unwrapMode === 'conformal' && <button className="btn-ghost accent" onClick={() => setUnwrapMode('cylinder')}><Icon name="arrow-right" size={14} />Unwrap with Cylinder</button>}
+                                        {uvPatch.tube && (unwrapMode === 'conformal' || unwrapMode === 'slim') && <button className="btn-ghost accent" onClick={() => setUnwrapMode('cylinder')}><Icon name="arrow-right" size={14} />Unwrap with Cylinder</button>}
                                         <button className={`btn-ghost ${fitPending ? 'accent' : ''}`} disabled={!fitPending} title="Scale the whole pattern (pitch, hole sizes and size field) to this surface and centre it" onClick={() => applyFit(false)}><Icon name={fitPending ? 'maximize-2' : 'check'} size={14} />{fitPending ? 'Fit pattern' : 'Pattern fitted'}</button>
                                     </div>
                                 </div> : slopeBlocked ? <>
                                     <p className="note"><Icon name="info" size={13} />Every face of this selection is steeper than {fmt(maxSlope, 0)}° from above, so Top view has nowhere to put holes. Raise Max slope, or pick another method.</p>
                                     {/* 牆面、圓柱側面：一鍵改用 BFF */}
-                                    <div className="btn-row"><button className="btn-ghost accent" onClick={() => setUnwrapMode('conformal')}><Icon name="arrow-right" size={14} />Unwrap with BFF</button></div>
+                                    <div className="btn-row"><button className="btn-ghost accent" onClick={() => setUnwrapMode('slim')}><Icon name="arrow-right" size={14} />Unwrap with Min stretch</button></div>
                                 </>
                                     : <p className="hint">Select a surface in step 2 to unwrap it into the flat panel.</p>}
+                                <label className="check" title="Each hole is pre-stretched in the flat layout by the local unwrap distortion, so on the curved part it comes out at its designed size and shape. Exports use the pre-stretched outlines."><input type="checkbox" checked={trueSize} onChange={e => setTrueSize(e.target.checked)} />True-size holes on the part</label>
                                 <label className="check"><input type="checkbox" checked={autoFit} onChange={e => { setAutoFit(e.target.checked); autoRef.current = null; }} />Auto-fit the pattern to each new surface</label>
                             </Section>
                             </>}

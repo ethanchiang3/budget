@@ -72,7 +72,30 @@
         .btn-primary { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px 0 14px; margin-left: 6px; border-radius: 8px; background: var(--invert); color: var(--on-invert); font-weight: 600; font-size: 12.5px; }
         .btn-primary:hover { opacity: 0.88; }
         .btn-ghost { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px; background: var(--tonal); color: var(--fg); font-size: 12px; font-weight: 500; }
-        .btn-ghost:hover { background: var(--tonal-hover); }
+        .btn-ghost:hover:not(:disabled) { background: var(--tonal-hover); }
+        .btn-ghost:disabled { cursor: default; color: var(--muted); background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+        .btn-ghost.strong { background: var(--invert); color: var(--on-invert); }
+        .btn-ghost.strong:hover { background: var(--invert); opacity: 0.88; }
+        .btn-ghost.accent { background: color-mix(in srgb, #8b5cf6 16%, transparent); color: color-mix(in srgb, #8b5cf6 80%, var(--fg)); }
+        .btn-ghost.accent:hover { background: color-mix(in srgb, #8b5cf6 24%, transparent); }
+        .samples { display: flex; align-items: center; gap: 2px; margin-left: auto; font-size: 11px; color: var(--faint); white-space: nowrap; }
+        .chip { height: 26px; padding: 0 7px; border-radius: 7px; font-size: 11.5px; font-weight: 500; color: var(--muted); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+        .chip:hover { color: var(--fg); background: var(--tonal); }
+        .chip.on { color: var(--fg); background: var(--tonal); text-decoration: none; }
+        .link { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+        .meta { margin: -6px 0 0; font: 11px/1.5 var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+        .meta b { font-weight: 500; color: var(--fg); }
+        .surface-card { display: grid; gap: 12px; padding: 12px; border-radius: 10px; background: var(--raised); box-shadow: 0 0 0 1px var(--line); }
+        .surface-card.empty { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+        .surface-card .hint { display: flex; gap: 8px; color: var(--fg); }
+        .surface-card .hint .ic { margin-top: 2px; color: var(--muted); }
+        .facts { display: grid; gap: 6px; margin: 0; }
+        .facts div { display: flex; justify-content: space-between; gap: 12px; font-size: 11.5px; }
+        .facts dt { color: var(--muted); white-space: nowrap; }
+        .facts dd { margin: 0; font: 500 11.5px var(--font-mono); text-align: right; }
+        .facts dd.warn { color: var(--warn); }
+        .note { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 12%, transparent); color: var(--fg); font-size: 11.5px; line-height: 1.45; }
+        .note .ic { margin-top: 2px; color: var(--warn); }
 
         .menu-wrap { position: relative; }
         .menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; width: 268px; padding: 6px; background: var(--raised); border-radius: 12px; box-shadow: 0 0 0 1px var(--line), var(--shadow); }
@@ -150,6 +173,7 @@
         .card-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); }
         .card-title { font-size: 10.5px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
         .card-sum { font: 500 11px var(--font-mono); color: var(--fg); }
+        .sum-warn { color: var(--warn); }
         .stats { display: grid; gap: 7px; margin: 12px 0 0; }
         .stats div { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
         .stats dt { color: var(--muted); }
@@ -161,6 +185,9 @@
         .dfm.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
         .dfm.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); cursor: help; }
         .dfm .ic { margin-top: 1px; }
+        .dfm > span:not(.ic) { flex: 1; }
+        .dfm-fix { margin: -3px -4px -3px 0; padding: 3px 10px; border-radius: 6px; font-weight: 700; font-size: 11.5px; color: var(--on-invert); background: var(--warn); }
+        .dfm-fix:hover { opacity: 0.88; }
 
         .statusbar { display: flex; align-items: center; gap: 16px; padding: 0 6px 0 14px; background: var(--panel); border-top: 1px solid var(--line); font: 11px var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; }
         .coords { min-width: 22ch; white-space: pre; }
@@ -182,9 +209,13 @@
         .pane-msg { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; font-size: 12px; color: var(--muted); }
         .pane-chip { top: 12px; left: 12px; max-width: calc(100% - 80px); padding: 7px 12px; border-radius: 9px; background: var(--panel); box-shadow: var(--shadow); font-size: 11.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .pane-tools { top: 12px; right: 12px; }
+        .pick-tip { position: absolute; left: 0; top: 0; z-index: 3; display: none; padding: 5px 9px; border-radius: 7px; background: var(--invert); color: var(--on-invert); font-size: 11px; font-weight: 500; white-space: nowrap; pointer-events: none; box-shadow: var(--shadow); }
+        .pane-cta { top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; background: #8b5cf6; color: #fff; font-size: 11.5px; font-weight: 600; white-space: nowrap; pointer-events: none; box-shadow: var(--shadow); }
         .pane-hint { position: absolute; left: 12px; right: 12px; bottom: 10px; z-index: 2; font-size: 10.5px; color: var(--muted); pointer-events: none; }
         .pane-msg-2d { left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 16px; border-radius: 10px; background: var(--panel); box-shadow: var(--shadow); font-size: 12px; color: var(--muted); white-space: nowrap; }
-        .toast { position: absolute; left: 50%; bottom: 14px; z-index: 5; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px; background: var(--invert); color: var(--on-invert); font-size: 12px; white-space: nowrap; box-shadow: var(--shadow); pointer-events: none; animation: toast-in 0.2s ease-out; }
+        .toast { position: absolute; left: 50%; bottom: 14px; z-index: 5; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: calc(100% - 24px); padding: 8px 14px; border-radius: 999px; background: var(--invert); color: var(--on-invert); font-size: 12px; white-space: nowrap; box-shadow: var(--shadow); pointer-events: none; animation: toast-in 0.2s ease-out; }
+        .toast button { pointer-events: auto; margin: -4px -6px -4px 0; padding: 4px 10px; border-radius: 999px; font-weight: 700; color: inherit; background: color-mix(in srgb, var(--on-invert) 16%, transparent); }
+        .toast button:hover { background: color-mix(in srgb, var(--on-invert) 26%, transparent); }
         @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 6px); } }
         @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
@@ -200,6 +231,7 @@
             .card { width: auto; max-width: calc(100% - 24px); padding: 9px 12px; }
             .view-pill { top: auto; bottom: 12px; }
             .trim-badge { top: auto; bottom: 14px; left: auto; right: 12px; transform: none; }
+            .pane-cta { top: auto; bottom: 12px; }
         }
     </style>
 </head>
@@ -265,7 +297,10 @@
             bgWidth: 200, bgOffsetX: 0, bgOffsetY: 0, bgOpacity: 0.5,
             bgColor: '#ffffff', color: '#1a1a1a',
             thickness: 0.8, finish: 'aluminium',
-            holeShape: 'round', holeLength: 3, holeTilt: 0, holeOrient: 'fixed', holeCorner: 0.25, holeAlt: 'off', holeTwist: 0
+            holeShape: 'round', holeLength: 3, holeTilt: 0, holeOrient: 'fixed', holeCorner: 0.25, holeAlt: 'off', holeTwist: 0,
+            edgeMargin: 0,
+            // 圖案目前配合的 3D 曲面外框 {cx, cy, w, h}；null = 配合 2D 面板
+            fitFrame: null
         };
         const ENUMS = { patternType: PATTERNS, attractorMode: FIELDS, boundaryShape: SHAPES, trimTarget: TRIMS, holeShape: HOLE_SHAPES, holeOrient: ORIENTS, holeAlt: ALTS };
 
@@ -281,6 +316,8 @@
                     if (ENUMS[k].some(o => o.value === v)) out[k] = v;
                 } else if (k === 'finish') {
                     if (FINISHES[v]) out[k] = v;
+                } else if (k === 'fitFrame') {
+                    out[k] = v && ['cx', 'cy', 'w', 'h'].every(f => Number.isFinite(v[f])) && v.w > 0 && v.h > 0 ? { cx: v.cx, cy: v.cy, w: v.w, h: v.h } : null;
                 } else if (typeof v === typeof def && (typeof v !== 'number' || Number.isFinite(v))) out[k] = v;
             }
             return out;
@@ -738,21 +775,26 @@
             return { name, T, V, tri, vIndex, vPos, fn, fa, adj, cn, bbox, inward };
         };
 
-        // 從點選的三角形向外擴張，遇到夾角大於分割角的邊就停
-        const growPatch = (model, seed, creaseDeg) => {
-            const cosT = Math.cos(creaseDeg * Math.PI / 180); const fn = model.fn;
-            const inP = new Uint8Array(model.T); const stack = [seed]; const out = [];
-            inP[seed] = 1;
-            while (stack.length) {
-                const t = stack.pop(); out.push(t);
-                for (let k = 0; k < 3; k++) {
-                    const n = model.adj[t * 3 + k];
-                    if (n < 0 || inP[n]) continue;
-                    // 面積為 0 的三角形沒有法線，視為相連，避免點到它時只選到一個三角形
-                    if (!model.fa[t] || !model.fa[n] || fn[t * 3] * fn[n * 3] + fn[t * 3 + 1] * fn[n * 3 + 1] + fn[t * 3 + 2] * fn[n * 3 + 2] >= cosT) { inP[n] = 1; stack.push(n); }
+        // 依分割角把整個模型分成曲面：相鄰面夾角小於分割角就屬於同一曲面（面積為 0 的三角形沒有法線，視為相連）。
+        // 回傳每個三角形的曲面編號、每個曲面的面積與三角形數
+        const labelPatches = (model, creaseDeg) => {
+            const cosT = Math.cos(creaseDeg * Math.PI / 180), fn = model.fn, T = model.T;
+            const label = new Int32Array(T).fill(-1), stack = new Int32Array(T), area = [], count = [];
+            for (let s0 = 0; s0 < T; s0++) {
+                if (label[s0] >= 0) continue;
+                const id = area.length; let sp = 0, a = 0, c = 0;
+                stack[sp++] = s0; label[s0] = id;
+                while (sp) {
+                    const t = stack[--sp]; a += model.fa[t]; c++;
+                    for (let k = 0; k < 3; k++) {
+                        const n = model.adj[t * 3 + k];
+                        if (n < 0 || label[n] >= 0) continue;
+                        if (!model.fa[t] || !model.fa[n] || fn[t * 3] * fn[n * 3] + fn[t * 3 + 1] * fn[n * 3 + 1] + fn[t * 3 + 2] * fn[n * 3 + 2] >= cosT) { label[n] = id; stack[sp++] = n; }
+                    }
                 }
+                area.push(a); count.push(c);
             }
-            return out;
+            return { label, area, count };
         };
 
         const normalCovariance = (model, tris) => {
@@ -1137,7 +1179,70 @@
             return new Float32Array(out);
         };
         // seed：預設選取的三角形（圓柱選頂蓋：257 = 第一個頂蓋三角形，上視圖投影下就是喇叭頂面網孔）
-        const SAMPLES = { panel: { name: 'Curved panel', make: samplePanel, seed: 0 }, cylinder: { name: 'Cylinder speaker', make: sampleCylinder, seed: 257 } };
+        const SAMPLES = { panel: { name: 'Curved panel', short: 'Panel', make: samplePanel, seed: 0 }, cylinder: { name: 'Cylinder speaker', short: 'Cylinder', make: sampleCylinder, seed: 257 } };
+        const SAMPLE_NAMES = new Set(Object.values(SAMPLES).map(smp => smp.name));
+
+        // ---------- 套合：圖案配合的邊界外框改變時，整組圖案等比縮放並置中 ----------
+        // 2D 設計面板的外框
+        const panelBounds = (P) => {
+            if (P.boundaryShape === 'rect') return { minX: Math.min(P.bL, P.bR), maxX: Math.max(P.bL, P.bR), minY: Math.min(P.bT, P.bB), maxY: Math.max(P.bT, P.bB) };
+            if (P.boundaryShape === 'circle') return { minX: P.bCX - P.bRad, maxX: P.bCX + P.bRad, minY: P.bCY - P.bRad, maxY: P.bCY + P.bRad };
+            const xs = P.quadPts.map(p => p.x); const ys = P.quadPts.map(p => p.y);
+            return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+        };
+        const boxOf = (b) => ({ cx: (b.minX + b.maxX) / 2, cy: (b.minY + b.maxY) / 2, w: Math.max(b.maxX - b.minX, 1e-6), h: Math.max(b.maxY - b.minY, 1e-6) });
+        const sameBox = (a, b) => Math.abs(a.cx - b.cx) < 1e-3 && Math.abs(a.cy - b.cy) < 1e-3 && Math.abs(a.w / b.w - 1) < 1e-4 && Math.abs(a.h / b.h - 1) < 1e-4;
+        const boxCorners = (b) => [[b.cx - b.w / 2, b.cy - b.h / 2], [b.cx + b.w / 2, b.cy - b.h / 2], [b.cx - b.w / 2, b.cy + b.h / 2], [b.cx + b.w / 2, b.cy + b.h / 2]];
+        // 世界座標 → 圖案座標（扣掉 Offset 與旋轉），與 App 內的 unplace 相同
+        const localOf = (P) => {
+            const r = (P.rotation || 0) * Math.PI / 180, c = Math.cos(r), sn = Math.sin(r);
+            return (x, y) => { const dx = x - P.patternX, dy = y - P.patternY; return [dx * c - dy * sn, dx * sn + dy * c]; };
+        };
+        const r4 = (v) => +v.toFixed(4);
+        // 只縮放孔位（孔距、樣條、Offset 以圖案原點為中心），孔徑不變
+        const spreadParams = (P, f) => ({ ...P, spacingX: r4(P.spacingX * f), spacingY: r4(P.spacingY * f),
+            boundarySplineA: P.boundarySplineA.map(pt => ({ x: r4(pt.x * f), y: r4(pt.y * f) })), boundarySplineB: P.boundarySplineB.map(pt => ({ x: r4(pt.x * f), y: r4(pt.y * f) })) });
+        // 格狀與放射陣列要蓋滿外框所需的行列（環）數
+        const needCounts = (P, box) => {
+            const loc = localOf(P); const cs = boxCorners(box).map(([x, y]) => loc(x, y));
+            if (P.patternType === 'radial') return { gridRows: Math.ceil(Math.max(...cs.map(([x, y]) => Math.hypot(x, y))) / P.spacingY) };
+            const vStep = P.patternType === 'hexagonal' ? P.spacingY * 0.866 : P.spacingY;
+            return { gridCols: Math.ceil(2 * Math.max(...cs.map(c => Math.abs(c[0]))) / P.spacingX) + 1, gridRows: Math.ceil(2 * Math.max(...cs.map(c => Math.abs(c[1]))) / vStep) + 1 };
+        };
+        const countsCover = (P, box) => Object.entries(needCounts(P, box)).every(([k, v]) => P[k] >= v);
+        // 樣條陣列兩條邊界曲線的外框（圖案座標）
+        const splineBox = (P) => {
+            const b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+            [P.boundarySplineA, P.boundarySplineB].forEach(pts => { for (let i = 0; i <= 24; i++) { const q = getBezierPoint(i / 24, pts); b.minX = Math.min(b.minX, q.x); b.maxX = Math.max(b.maxX, q.x); b.minY = Math.min(b.minY, q.y); b.maxY = Math.max(b.maxY, q.y); } });
+            return b;
+        };
+        const splineCovers = (P, box) => { const sb = splineBox(P), loc = localOf(P); return boxCorners(box).every(([x, y]) => { const [u, v] = loc(x, y); return u >= sb.minX && u <= sb.maxX && v >= sb.minY && v <= sb.maxY; }); };
+        // 把配合 from 外框的圖案搬到 to 外框：外框面積比決定縮放 k、中心對齊。
+        // 孔距、樣條、圖案位置、尺寸場（以及開啟 Scale hole sizes too 時的孔徑）一起縮放；2D 面板、參考圖、Edge margin 與板厚不變。
+        // 原本蓋滿 from 的陣列，套合後也會蓋滿 to（格狀／放射增加行列，樣條再放大）。
+        const fitDesign = (P, from, to) => {
+            const k = Math.sqrt((to.w * to.h) / (from.w * from.h));
+            const M = (pt) => ({ x: r4(to.cx + k * (pt.x - from.cx)), y: r4(to.cy + k * (pt.y - from.cy)) });
+            const o = M({ x: P.patternX, y: P.patternY });
+            let Q = { ...spreadParams(P, k), patternX: o.x, patternY: o.y, attractorRadius: r4(P.attractorRadius * k), influenceRange: r4(P.influenceRange * k), cvs: P.cvs.map(M), linePts: P.linePts.map(M) };
+            if (P.scaleHoles) { Q.baseDiameter = r4(P.baseDiameter * k); Q.minDiameter = r4(P.minDiameter * k); }
+            if (P.patternType === 'splineGrid') {
+                if (splineCovers(P, from) && !splineCovers(Q, to)) {
+                    const sb = splineBox(Q), loc = localOf(Q); let f = 1;
+                    boxCorners(to).forEach(([x, y]) => {
+                        const [u, v] = loc(x, y);
+                        if (u > 0 && sb.maxX > 0) f = Math.max(f, u / sb.maxX); if (u < 0 && sb.minX < 0) f = Math.max(f, u / sb.minX);
+                        if (v > 0 && sb.maxY > 0) f = Math.max(f, v / sb.maxY); if (v < 0 && sb.minY < 0) f = Math.max(f, v / sb.minY);
+                    });
+                    f *= 1.03; Q = spreadParams(Q, f);
+                    if (P.scaleHoles) { Q.baseDiameter = r4(Q.baseDiameter * f); Q.minDiameter = r4(Q.minDiameter * f); }
+                }
+            } else if (countsCover(P, from) && !countsCover(Q, to)) {
+                const need = needCounts(Q, to);
+                Object.entries(need).forEach(([key, v]) => { Q[key] = clamp(Math.max(Q[key], v + 1), key === 'gridRows' && P.patternType === 'radial' ? 1 : 2, 150); });
+            }
+            return { P: Q, k };
+        };
 
         // 在 ctx 上加入一個孔的路徑；X/Y 把 mm 轉成畫面座標，zoom 為每 mm 的像素
         const traceHolePath = (ctx, d, X, Y, zoom, shape, corner) => {
@@ -1158,8 +1263,11 @@
         };
 
         // 3D 檢視：three.js 場景與軌道相機；點選曲面；穿孔以 alpha 貼圖鏤空，可透視
-        const Viewport3D = ({ model, upAxis, patch, dots, holeShape, holeCorner, finishKey, finish, guides, bg, onPick, apiRef }) => {
+        const Viewport3D = ({ model, labels, selectedIds, upAxis, patch, dots, holeShape, holeCorner, finishKey, finish, guides, bg, onPick, apiRef }) => {
             const glRef = useRef(null);
+            const tipRef = useRef(null);
+            const labelsRef = useRef(labels); labelsRef.current = labels;
+            const selRef = useRef(selectedIds); selRef.current = selectedIds;
             const st = useRef({});
             const [status, setStatus] = useState('loading');
             const onPickRef = useRef(onPick); onPickRef.current = onPick;
@@ -1257,6 +1365,47 @@
                         if (ptrs.size === 0) drag = null;
                     };
                     el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+
+                    // 滑過預覽：游標下、點下去會選到的曲面染成紫色，旁邊顯示面積與點選的結果
+                    s.hoverMat = new THREE.MeshBasicMaterial({ color: COLORS.pattern, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+                    s.hoverId = -1;
+                    s.setHover = (id, force) => {
+                        if (id === s.hoverId && !force) return;
+                        s.hoverId = id;
+                        if (s.hoverMesh) { s.root.remove(s.hoverMesh); s.hoverMesh.geometry.dispose(); s.hoverMesh = null; }
+                        const L = labelsRef.current, m = s.model, sel = id >= 0 && selRef.current.has(id);
+                        if (id >= 0 && L && m && !sel) {
+                            const pos = new Float32Array(L.count[id] * 9); let j = 0;
+                            for (let t = 0; t < m.T; t++) if (L.label[t] === id) { pos.set(m.tri.subarray(t * 9, t * 9 + 9), j); j += 9; }
+                            const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+                            s.hoverMesh = new THREE.Mesh(g, s.hoverMat); s.hoverMesh.renderOrder = 2; s.root.add(s.hoverMesh);
+                        }
+                        const tip = tipRef.current;
+                        if (tip) {
+                            tip.style.display = id >= 0 && L ? 'block' : 'none';
+                            if (id >= 0 && L) tip.textContent = `${fmt(L.area[id] / 100, L.area[id] < 1000 ? 2 : 1)} cm² · ${sel ? 'selected · Shift-click to remove' : selRef.current.size ? 'click to select · Shift-click to add' : 'click to perforate'}`;
+                        }
+                        el.style.cursor = id >= 0 ? 'pointer' : 'grab';
+                        s.render();
+                    };
+                    let hoverRaf = 0, hoverXY = null;
+                    const hoverAt = () => {
+                        hoverRaf = 0;
+                        if (!hoverXY || !s.pickMesh || drag) return;
+                        const r = el.getBoundingClientRect();
+                        s.ray.setFromCamera(new THREE.Vector2((hoverXY.x - r.left) / r.width * 2 - 1, -(hoverXY.y - r.top) / r.height * 2 + 1), camera);
+                        const hit = s.ray.intersectObject(s.pickMesh, false)[0], L = labelsRef.current;
+                        s.setHover(hit && L ? L.label[hit.faceIndex] : -1);
+                    };
+                    el.addEventListener('pointermove', e => {
+                        if (e.pointerType !== 'mouse' || drag) return;
+                        hoverXY = { x: e.clientX, y: e.clientY };
+                        const tip = tipRef.current;
+                        if (tip) { const r = el.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; tip.style.transform = `translate(${Math.min(x + 14, r.width - tip.offsetWidth - 8)}px, ${y + 18 > r.height - 40 ? y - 34 : y + 18}px)`; }
+                        if (!hoverRaf) hoverRaf = requestAnimationFrame(hoverAt);
+                    });
+                    el.addEventListener('pointerdown', () => { if (s.hoverId >= 0) s.setHover(-1); });
+                    el.addEventListener('pointerleave', () => { hoverXY = null; s.setHover(-1); });
                     el.addEventListener('wheel', e => { e.preventDefault(); s.orbit.dist *= Math.exp(e.deltaY * 0.0012); s.render(); }, { passive: false });
                     setStatus('ready');
                 }).catch(() => { if (!dead) setStatus('error'); });
@@ -1277,6 +1426,9 @@
             }, [status]);
 
             useEffect(() => { if (status === 'ready') { st.current.renderer.setClearColor(bg); st.current.render(); } }, [status, bg]);
+            // 選取改變時重畫預覽（剛選到的曲面不再染色）；換模型或分割角時預覽失效
+            useEffect(() => { if (status === 'ready') st.current.setHover?.(st.current.hoverId, true); }, [status, selectedIds]);
+            useEffect(() => { if (status === 'ready') st.current.setHover?.(-1, true); }, [status, labels]);
 
             // 模型：隱藏的完整網格只用來點選（faceIndex = 三角形編號）
             useEffect(() => {
@@ -1361,11 +1513,13 @@
             return (
                 <div className="pane3d">
                     <div className="gl" ref={glRef}></div>
+                    <div className="pick-tip" ref={tipRef}></div>
                     {status !== 'ready' && <div className="pane-msg">{status === 'loading' ? 'Loading the 3D engine…' : status === 'nogl' ? 'This browser has WebGL turned off, so the 3D view can’t be shown.' : 'The 3D engine couldn’t load. Check your connection, then switch to 2D and back to 3D.'}</div>}
                     {status === 'ready' && <>
                         <div className="overlay pane-chip" title={model?.name}>{model ? model.name : 'No model'}</div>
                         <div className="overlay pane-tools"><div className="pill"><button className="icon" title="Fit model to view (F)" aria-label="Fit model to view" onClick={() => apiRef.current?.fit()}><Icon name="scan" size={15} /></button></div></div>
-                        <div className="pane-hint">{patch ? 'Drag to orbit · right-drag to pan · scroll to zoom · click another surface to move the pattern, Shift-click to add one' : 'Click a surface to apply the pattern · Shift-click adds more · drag to orbit · right-drag to pan'}</div>
+                        {model && !patch && <div className="overlay pane-cta"><Icon name="mouse-pointer-click" size={13} />Click a surface to perforate it</div>}
+                        <div className="pane-hint">Drag to orbit · right-drag to pan · scroll to zoom{patch ? ' · Shift-click adds a surface' : ''}</div>
                     </>}
                 </div>
             );
@@ -1403,6 +1557,8 @@
             const [crease, setCrease] = useState(30);
             // 上視圖投影的最大坡度：更陡的面不開孔
             const [maxSlope, setMaxSlope] = useState(60);
+            // 選了曲面就把圖案等比套合上去
+            const [autoFit, setAutoFit] = useState(() => stored.autoFit !== false);
             const [seeds, setSeeds] = useState([]);
             // 平面面板預設就是零件的上視圖
             const [unwrapMode, setUnwrapMode] = useState('top');
@@ -1414,12 +1570,13 @@
                 const k = UNITS.find(u => u.value === unit).k;
                 return buildModel(k === 1 ? modelSrc.tri : modelSrc.tri.map(v => v * k), modelSrc.name);
             }, [modelSrc, unit]);
+            const labels = useMemo(() => model ? labelPatches(model, crease) : null, [model, crease]);
+            const selectedIds = useMemo(() => new Set(labels ? seeds.filter(sd => sd < labels.label.length).map(sd => labels.label[sd]) : []), [labels, seeds]);
             const patchTris = useMemo(() => {
-                if (!model || !seeds.length) return null;
-                const seen = new Uint8Array(model.T); const out = [];
-                seeds.forEach(sd => { if (sd < model.T) growPatch(model, sd, crease).forEach(t => { if (!seen[t]) { seen[t] = 1; out.push(t); } }); });
+                if (!labels || !selectedIds.size) return null;
+                const out = []; for (let t = 0; t < model.T; t++) if (selectedIds.has(labels.label[t])) out.push(t);
                 return out.length ? out : null;
-            }, [model, seeds, crease]);
+            }, [labels, selectedIds]);
             const uvPatch = useMemo(() => {
                 if (!mode3D || !model || !patchTris) return null;
                 const up = upAxis === 'y' ? [0, 1, 0] : [0, 0, 1];
@@ -1434,15 +1591,16 @@
             // 3D 模式選了曲面時，裁切邊界就是展開後的曲面
             const boundaryShape = uvPatch ? 'uv' : params.boundaryShape;
             const set = (key) => (v) => setParams(p => ({ ...p, [key]: v }));
-            const notify = (msg) => setToast({ msg, id: Date.now() });
+            // action：{ label, run } 讓提示附上一個按鈕（例如「Undo」）
+            const notify = (msg, action) => setToast({ msg, action, id: Date.now() });
 
-            useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 2400); return () => clearTimeout(t); }, [toast]);
+            useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), toast.action ? 5000 : 2400); return () => clearTimeout(t); }, [toast]);
 
             // 自動儲存（僅存在此瀏覽器）
             useEffect(() => {
-                const t = setTimeout(() => saveStore({ design: params, mode: view.mode, guides: view.guides, sections: openSections, mode3D }), 300);
+                const t = setTimeout(() => saveStore({ design: params, mode: view.mode, guides: view.guides, sections: openSections, mode3D, autoFit }), 300);
                 return () => clearTimeout(t);
-            }, [params, view.mode, view.guides, openSections, mode3D]);
+            }, [params, view.mode, view.guides, openSections, mode3D, autoFit]);
 
             // 復原 / 重做：350ms 內的連續變更（拖曳、滑桿）合併為一步
             const historyRef = useRef({ past: [], future: [], base: null, timer: 0, skip: false });
@@ -1473,6 +1631,28 @@
                 h.skip = true; h.base = next; setParams(next); setHistTick(t => t + 1);
             };
             const canUndo = historyRef.current.past.length > 0 || (historyRef.current.base !== null && historyRef.current.base !== params);
+            // 提示裡的 Undo 按鈕在之後的畫面才會按下，要呼叫當下最新的 undo
+            const undoRef = useRef(undo); undoRef.current = undo;
+
+            // 套合：圖案記得自己配合的外框（fitFrame；null = 2D 面板）。選取的曲面改變、或回到 2D 時，
+            // Auto-fit 會把整組圖案從原本的外框等比搬到新的外框；只在目標改變時觸發，所以 Undo 之後不會又自動套回去
+            const targetBox = mode3D ? (uvPatch ? boxOf(uvPatch.bounds) : null) : boxOf(panelBounds(params));
+            const fitFrom = params.fitFrame || boxOf(panelBounds(params));
+            const fitPending = !!targetBox && (mode3D ? !sameBox(fitFrom, targetBox) : !!params.fitFrame);
+            const applyFit = (auto) => {
+                if (!targetBox) return;
+                const { P: Q, k } = fitDesign(params, fitFrom, targetBox);
+                setParams({ ...Q, fitFrame: mode3D ? targetBox : null });
+                if (!auto || Math.abs(Math.log(k)) > 0.02) notify(`Pattern ${mode3D ? 'fitted to the surface' : 'fitted back to the panel'} · scaled to ${fmt(k * 100, k < 0.1 ? 1 : 0)}%`, { label: 'Undo', run: () => undoRef.current() });
+            };
+            const autoRef = useRef(null);
+            useLayoutEffect(() => {
+                if (!autoFit || !targetBox) return;
+                const a = autoRef.current;
+                if (a && a.mode3D === mode3D && sameBox(a.box, targetBox)) return;
+                autoRef.current = { box: targetBox, mode3D };
+                if (fitPending) applyFit(true);
+            });
             const canRedo = historyRef.current.future.length > 0;
 
             // 主題切換時重繪畫布（畫布顏色取自 CSS token）
@@ -1521,13 +1701,200 @@
 
             const zoomBy = (factor) => setView(v => { const zoom = clampZoom(v.zoom * factor); const k = zoom / v.zoom; return { ...v, zoom, panX: v.panX * k, panY: v.panY * k }; });
 
-            const getBounds = () => {
-                if (boundaryShape === 'uv') return uvPatch.bounds;
-                if (boundaryShape === 'rect') return { minX: Math.min(params.bL, params.bR), maxX: Math.max(params.bL, params.bR), minY: Math.min(params.bT, params.bB), maxY: Math.max(params.bT, params.bB) };
-                if (boundaryShape === 'circle') return { minX: params.bCX - params.bRad, maxX: params.bCX + params.bRad, minY: params.bCY - params.bRad, maxY: params.bCY + params.bRad };
-                const xs = params.quadPts.map(p => p.x); const ys = params.quadPts.map(p => p.y);
-                return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+            // 圖案引擎：給定一組設計參數 P，算出邊界、孔位與分析；目前的設計、自動套合、開孔率目標與 DFM 修正都用它試算
+            const engineFor = (P) => {
+                const { patternType, attractorMode, trimTarget } = P;
+                const boundaryShape = uvPatch ? 'uv' : P.boundaryShape;
+                const getBounds = () => boundaryShape === 'uv' ? uvPatch.bounds : panelBounds(P);
+
+                const getArea = () => {
+                    if (boundaryShape === 'uv') return uvPatch.area;
+                    if (boundaryShape === 'circle') return Math.PI * P.bRad**2;
+                    if (boundaryShape === 'rect') return Math.abs((P.bR - P.bL) * (P.bB - P.bT));
+                    const q = P.quadPts;
+                    return Math.abs(q.reduce((s, p, i) => s + p.x * q[(i + 1) % 4].y - q[(i + 1) % 4].x * p.y, 0)) / 2;
+                };
+
+                // 矩形與四邊形的外框頂點（世界座標）；圓形回傳 null
+                const outlinePts = () => {
+                    if (boundaryShape === 'circle' || boundaryShape === 'uv') return null;
+                    if (boundaryShape === 'quad') return P.quadPts;
+                    const b = getBounds();
+                    return [{ x: b.minX, y: b.minY }, { x: b.maxX, y: b.minY }, { x: b.maxX, y: b.maxY }, { x: b.minX, y: b.maxY }];
+                };
+
+                const isInside = (x, y, margin = 0.01) => {
+                    if (boundaryShape === 'uv') return !!uvLocate(uvPatch, x, y);
+                    if (boundaryShape === 'rect') {
+                        const b = getBounds();
+                        return x >= b.minX - margin && x <= b.maxX + margin && y >= b.minY - margin && y <= b.maxY + margin;
+                    } else if (boundaryShape === 'circle') {
+                        return dist(x, y, P.bCX, P.bCY) <= P.bRad + margin;
+                    }
+                    const q = P.quadPts;
+                    return pointInPolygon(x, y, q) || q.some((p, i) => distToSegment(x, y, p, q[(i + 1) % 4]) <= margin);
+                };
+                // 點 (x, y) 離邊界內側至少 R：矩形、圓、四邊形用精確距離；展開曲面在半徑 R 的圓上取樣
+                const RING = Array.from({ length: 12 }, (_, i) => [Math.cos(i * Math.PI / 6), Math.sin(i * Math.PI / 6)]);
+                const insideBy = (x, y, R) => {
+                    if (boundaryShape === 'uv') return !!uvLocate(uvPatch, x, y) && RING.every(([c, sn]) => uvLocate(uvPatch, x + c * R, y + sn * R));
+                    if (boundaryShape === 'rect') { const b = getBounds(); return x - b.minX >= R && b.maxX - x >= R && y - b.minY >= R && b.maxY - y >= R; }
+                    if (boundaryShape === 'circle') return dist(x, y, P.bCX, P.bCY) <= P.bRad - R;
+                    const q = P.quadPts;
+                    return pointInPolygon(x, y, q) && q.every((p, i) => distToSegment(x, y, p, q[(i + 1) % 4]) >= R);
+                };
+                // Edge margin > 0：整個孔（以膠囊近似）都在邊界內，且離邊緣至少 margin；凸形邊界只需檢查膠囊兩端
+                const margin = Math.max(0, P.edgeMargin || 0);
+                const holeFits = (d) => {
+                    const c = capsule(d, P.holeShape), R = c.r + margin;
+                    if (c.a.x === c.b.x && c.a.y === c.b.y) return insideBy(c.a.x, c.a.y, R);
+                    return insideBy(c.a.x, c.a.y, R) && insideBy(c.b.x, c.b.y, R) && (boundaryShape !== 'uv' && boundaryShape !== 'quad' || insideBy(d.x, d.y, R));
+                };
+
+                // 尺寸場影響值 s：在吸引子上為 0、超出影響範圍為 1（已套用 Falloff）
+                const fieldS = (x, y) => {
+                    if (attractorMode === 'none') return 1;
+                    let dAtt = 0;
+                    if (attractorMode === 'radial') dAtt = Math.abs(Math.sqrt(x*x + y*y) - P.attractorRadius);
+                    else if (attractorMode === 'curve') {
+                        let minD = Infinity;
+                        for (let i = 0; i <= 20; i++) {
+                            const p = getBezierPoint(i / 20, P.cvs);
+                            const d = dist(x, y, p.x, p.y);
+                            if (d < minD) minD = d;
+                        }
+                        dAtt = minD;
+                    } else if (attractorMode === 'line') {
+                        dAtt = distToSegment(x, y, P.linePts[0], P.linePts[1]);
+                    }
+                    return Math.pow(Math.min(1, dAtt / P.influenceRange), P.falloff);
+                };
+                const sizeFromS = (s) => attractorMode === 'none' ? P.baseDiameter : P.minDiameter + (P.baseDiameter - P.minDiameter) * s;
+
+                // 圖案群組變換：圖案先在自己的座標中產生，再旋轉（逆時針為正）並平移到 Offset
+                const grot = (P.rotation || 0) * Math.PI / 180, gc = Math.cos(grot), gs = Math.sin(grot);
+                const place = (x, y) => [P.patternX + x * gc + y * gs, P.patternY - x * gs + y * gc];
+                const unplace = (x, y) => { const dx = x - P.patternX, dy = y - P.patternY; return [dx * gc - dy * gs, dx * gs + dy * gc]; };
+                // 孔的方向（螢幕座標弧度）：固定、沿尺寸場、或由圖案中心向外；Tilt 為逆時針偏移
+                const holeAngle = (x, y, row, s) => {
+                    if (P.holeShape === 'round') return 0;
+                    const odd = row % 2 !== 0;
+                    let tilt = -(odd && P.holeAlt === 'mirror' ? -P.holeTilt : P.holeTilt) * Math.PI / 180;
+                    if (odd && P.holeAlt === 'quarter') tilt -= Math.PI / 2;
+                    if (odd && P.holeAlt === 'flip') tilt += Math.PI;
+                    // 越靠近吸引子轉得越多（與孔徑共用同一條衰減曲線）
+                    if (attractorMode !== 'none') tilt -= P.holeTwist * (1 - s) * Math.PI / 180;
+                    if (P.holeOrient === 'radial') return Math.atan2(y - P.patternY, x - P.patternX) + tilt;
+                    if (P.holeOrient === 'field') {
+                        if (attractorMode === 'radial') return Math.atan2(y, x) + Math.PI / 2 + tilt;
+                        if (attractorMode === 'line') { const [a, b] = P.linePts; return Math.atan2(b.y - a.y, b.x - a.x) + tilt; }
+                        if (attractorMode === 'curve') {
+                            const pts = P.cvs; const d2 = (t) => { const p = getBezierPoint(t, pts); return (p.x - x)**2 + (p.y - y)**2; };
+                            let best = 0; for (let i = 1; i <= 32; i++) if (d2(i / 32) < d2(best / 32)) best = i;
+                            let lo = Math.max(0, (best - 1) / 32), hi = Math.min(1, (best + 1) / 32);
+                            for (let k = 0; k < 20; k++) { const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3; if (d2(m1) < d2(m2)) hi = m2; else lo = m1; }
+                            const t = (lo + hi) / 2, it = 1 - t;
+                            const dx = 3*it*it*(pts[1].x - pts[0].x) + 6*it*t*(pts[2].x - pts[1].x) + 3*t*t*(pts[3].x - pts[2].x);
+                            const dy = 3*it*it*(pts[1].y - pts[0].y) + 6*it*t*(pts[2].y - pts[1].y) + 3*t*t*(pts[3].y - pts[2].y);
+                            return Math.atan2(dy, dx) + tilt;
+                        }
+                    }
+                    return tilt - grot;
+                };
+                const lengthFactor = P.holeShape === 'round' ? 1 : P.holeLength * (P.holeShape === 'hex' ? 2 / Math.sqrt(3) : P.holeShape === 'tri' ? Math.sqrt(3) : 1);
+
+                // 產生所有可見孔 {x, y, dia(寬), len(長), ang}；畫布、統計與匯出共用
+                const collectDots = () => {
+                    const dots = []; let row = 0;
+                    const addDot = (lx, ly, bypassTrim = false) => {
+                        const [x, y] = place(lx, ly);
+                        if (!bypassTrim && !margin && !isInside(x, y)) return;
+                        const s = fieldS(x, y); const dia = sizeFromS(s);
+                        const d = { x, y, dia, len: dia * lengthFactor, ang: holeAngle(x, y, row, s) };
+                        if (!bypassTrim && margin && !holeFits(d)) return;
+                        dots.push(d);
+                    };
+                    // Trim curves：列與邊界的交點往內縮（邊距 + 最大孔的半長），端點的孔才會完整
+                    const runR = margin + P.baseDiameter * Math.max(1, lengthFactor) / 2;
+                    const inRun = (x, y) => margin ? insideBy(x, y, runR) : isInside(x, y);
+
+                    if (patternType === 'grid' || patternType === 'hexagonal') {
+                        const hex = patternType === 'hexagonal';
+                        const vStep = hex ? P.spacingY * 0.866 : P.spacingY;
+                        const x0 = -(P.gridCols - 1) / 2 * P.spacingX;
+                        for (let j = 0; j < P.gridRows; j++) {
+                            row = j;
+                            const y = (j - (P.gridRows - 1) / 2) * vStep;
+                            const stagger = hex && j % 2 !== 0 ? P.stagger : 0;
+                            if (trimTarget === 'curves') {
+                                // 只在格線與邊界相交的區段內佈點，兩端貼齊邊界
+                                insideRuns(x => inRun(...place(x, y)), x0, -x0).forEach(seg => spread(seg.s, seg.e, P.spacingX, stagger, x => addDot(x, y, true)));
+                            } else {
+                                for (let c = 0; c < P.gridCols; c++) addDot(x0 + (c + stagger) * P.spacingX, y);
+                            }
+                        }
+                    } else if (patternType === 'radial') {
+                        for (let r = 1; r <= P.gridRows; r++) {
+                            row = r - 1;
+                            const rad = r * P.spacingY;
+                            const fullCount = Math.max(P.mirrorCount, Math.round((2 * Math.PI * rad / P.spacingX) / P.mirrorCount) * P.mirrorCount);
+                            const ringDot = (a) => addDot(rad * Math.cos(a), rad * Math.sin(a), trimTarget === 'curves');
+                            if (trimTarget === 'curves') {
+                                const t0 = 0, t1 = Math.PI * 2;
+                                const segments = insideRuns(a => inRun(...place(rad * Math.cos(a), rad * Math.sin(a))), t0, t1, 720);
+                                const fullRing = segments.length === 1 && segments[0].s === t0 && segments[0].e === t1;
+                                if (!fullRing) {
+                                    if (segments.length > 1 && segments[0].s === t0 && segments[segments.length-1].e === t1) segments[0].s = segments.pop().s - Math.PI*2;
+                                    segments.forEach(seg => spread(seg.s, seg.e, (Math.PI * 2) / fullCount, 0, ringDot));
+                                    continue;
+                                }
+                            }
+                            for (let i = 0; i < fullCount; i++) ringDot((i/fullCount)*Math.PI*2);
+                        }
+                    } else if (patternType === 'splineGrid') {
+                        const nU = P.gridCols - 1; const nV = P.gridRows - 1;
+                        for (let j = 0; j <= nV; j++) {
+                            row = j;
+                            const v = j / nV;
+                            const intermediatePts = P.boundarySplineA.map((pA, idx) => ({ x: pA.x * (1 - v) + P.boundarySplineB[idx].x * v, y: pA.y * (1 - v) + P.boundarySplineB[idx].y * v }));
+                            let range = { start: 0, end: 1 };
+                            if (trimTarget === 'curves') {
+                                const runs = insideRuns(t => { const p = getBezierPoint(t, intermediatePts); return inRun(...place(p.x, p.y)); }, 0, 1);
+                                if (!runs.length) continue;
+                                range = { start: runs[0].s, end: runs[runs.length - 1].e };
+                            }
+                            for (let i = 0; i <= nU; i++) {
+                                let u = i / nU;
+                                if (trimTarget === 'curves') {
+                                    if (j % 2 !== 0 && i > 0 && i < nU) u = Math.min(0.999, Math.max(0.001, (i + P.stagger - 0.5) / nU));
+                                    if (i === 0) u = 0; if (i === nU) u = 1;
+                                } else if (j % 2 !== 0) u = Math.min(1, Math.max(0, u + P.stagger * (1/nU)));
+                                const pF = getBezierPoint(range.start + u * (range.end - range.start), intermediatePts);
+                                addDot(pF.x, pF.y, trimTarget === 'curves');
+                            }
+                        }
+                    }
+                    return dots;
+                };
+
+                const holeArea_ = (d) => holeArea(d, P.holeShape, P.holeCorner);
+                // 可製造性分析：孔寬與料寬須 ≥ 板厚（沖孔經驗法則）
+                const analyze = (dots) => {
+                    const t = P.thickness; const webs = nearestWebs(dots, P.holeShape);
+                    const issues = new Set(); let small = 0, tight = 0, overlaps = 0, minWeb = Infinity, holeArea = 0, cutLength = 0;
+                    dots.forEach((d, i) => {
+                        holeArea += holeArea_(d); cutLength += holePerimeter(d, P.holeShape, P.holeCorner);
+                        if (webs[i] < minWeb) minWeb = webs[i];
+                        if (d.dia < t - 1e-9) { small++; issues.add(i); }
+                        if (webs[i] < 0) { overlaps++; issues.add(i); }
+                        else if (webs[i] < t - 1e-9) { tight++; issues.add(i); }
+                    });
+                    return { issues, small, tight, overlaps, minWeb, holeArea, cutLength };
+                };
+                return { boundaryShape, getBounds, getArea, outlinePts, isInside, place, unplace, collectDots, analyze };
             };
+            const engine = engineFor(params);
+            const { getBounds, getArea, outlinePts, place, unplace } = engine;
 
             // 把邊界縮放到畫面中，避開分析卡與浮動控制
             const fitView = () => {
@@ -1542,22 +1909,6 @@
             };
             useEffect(() => { if (canvasDim.w > 0 && !fittedRef.current) { fittedRef.current = true; fitView(); } }, [canvasDim.w, params, uvPatch]);
 
-            const getArea = () => {
-                if (boundaryShape === 'uv') return uvPatch.area;
-                if (boundaryShape === 'circle') return Math.PI * params.bRad**2;
-                if (boundaryShape === 'rect') return Math.abs((params.bR - params.bL) * (params.bB - params.bT));
-                const q = params.quadPts;
-                return Math.abs(q.reduce((s, p, i) => s + p.x * q[(i + 1) % 4].y - q[(i + 1) % 4].x * p.y, 0)) / 2;
-            };
-
-            // 矩形與四邊形的外框頂點（世界座標）；圓形回傳 null
-            const outlinePts = () => {
-                if (boundaryShape === 'circle' || boundaryShape === 'uv') return null;
-                if (boundaryShape === 'quad') return params.quadPts;
-                const b = getBounds();
-                return [{ x: b.minX, y: b.minY }, { x: b.maxX, y: b.minY }, { x: b.maxX, y: b.maxY }, { x: b.minX, y: b.maxY }];
-            };
-
             // 數值調整邊界尺寸（以中心為基準縮放），與畫布拖曳同步
             const resizeBoundary = (axis, size) => setParams(p => {
                 if (boundaryShape === 'circle') return { ...p, bRad: size / 2 };
@@ -1571,42 +1922,6 @@
                 return { ...p, quadPts: p.quadPts.map(pt => ({ ...pt, [k]: c + (pt[k] - c) * s })) };
             });
 
-            const isInside = (x, y, margin = 0.01) => {
-                if (boundaryShape === 'uv') return !!uvLocate(uvPatch, x, y);
-                if (boundaryShape === 'rect') {
-                    const b = getBounds();
-                    return x >= b.minX - margin && x <= b.maxX + margin && y >= b.minY - margin && y <= b.maxY + margin;
-                } else if (boundaryShape === 'circle') {
-                    return dist(x, y, params.bCX, params.bCY) <= params.bRad + margin;
-                }
-                const q = params.quadPts;
-                return pointInPolygon(x, y, q) || q.some((p, i) => distToSegment(x, y, p, q[(i + 1) % 4]) <= margin);
-            };
-
-            // 尺寸場影響值 s：在吸引子上為 0、超出影響範圍為 1（已套用 Falloff）
-            const fieldS = (x, y) => {
-                if (attractorMode === 'none') return 1;
-                let dAtt = 0;
-                if (attractorMode === 'radial') dAtt = Math.abs(Math.sqrt(x*x + y*y) - params.attractorRadius);
-                else if (attractorMode === 'curve') {
-                    let minD = Infinity;
-                    for (let i = 0; i <= 20; i++) {
-                        const p = getBezierPoint(i / 20, params.cvs);
-                        const d = dist(x, y, p.x, p.y);
-                        if (d < minD) minD = d;
-                    }
-                    dAtt = minD;
-                } else if (attractorMode === 'line') {
-                    dAtt = distToSegment(x, y, params.linePts[0], params.linePts[1]);
-                }
-                return Math.pow(Math.min(1, dAtt / params.influenceRange), params.falloff);
-            };
-            const sizeFromS = (s) => attractorMode === 'none' ? params.baseDiameter : params.minDiameter + (params.baseDiameter - params.minDiameter) * s;
-
-            // 圖案群組變換：圖案先在自己的座標中產生，再旋轉（逆時針為正）並平移到 Offset
-            const grot = (params.rotation || 0) * Math.PI / 180, gc = Math.cos(grot), gs = Math.sin(grot);
-            const place = (x, y) => [params.patternX + x * gc + y * gs, params.patternY - x * gs + y * gc];
-            const unplace = (x, y) => { const dx = x - params.patternX, dy = y - params.patternY; return [dx * gc - dy * gs, dx * gs + dy * gc]; };
             // 畫布上的群組控制：中心（移動）、+x 方向的旋轉把手、上方的縮放把手，與縮放無關固定 56px
             const gizmoPts = () => { const L = 56 / view.zoom; return { c: [params.patternX, params.patternY], r: place(L, 0), s: place(0, -L) }; };
             // 以基準狀態等比縮放圖案群組：孔距（與孔徑）一起變，樣條控制點以圖案原點縮放
@@ -1622,118 +1937,6 @@
             const scaleStart = () => { scaleBase.current = params; };
             const scaleBy = (k) => { const b = scaleBase.current || params; setParams(p => ({ ...p, ...scaledFrom(b, k) })); };
             const scaleEnd = () => { scaleBase.current = null; };
-
-            // 孔的方向（螢幕座標弧度）：固定、沿尺寸場、或由圖案中心向外；Tilt 為逆時針偏移
-            const holeAngle = (x, y, row, s) => {
-                if (params.holeShape === 'round') return 0;
-                const odd = row % 2 !== 0;
-                let tilt = -(odd && params.holeAlt === 'mirror' ? -params.holeTilt : params.holeTilt) * Math.PI / 180;
-                if (odd && params.holeAlt === 'quarter') tilt -= Math.PI / 2;
-                if (odd && params.holeAlt === 'flip') tilt += Math.PI;
-                // 越靠近吸引子轉得越多（與孔徑共用同一條衰減曲線）
-                if (attractorMode !== 'none') tilt -= params.holeTwist * (1 - s) * Math.PI / 180;
-                if (params.holeOrient === 'radial') return Math.atan2(y - params.patternY, x - params.patternX) + tilt;
-                if (params.holeOrient === 'field') {
-                    if (attractorMode === 'radial') return Math.atan2(y, x) + Math.PI / 2 + tilt;
-                    if (attractorMode === 'line') { const [a, b] = params.linePts; return Math.atan2(b.y - a.y, b.x - a.x) + tilt; }
-                    if (attractorMode === 'curve') {
-                        const pts = params.cvs; const d2 = (t) => { const p = getBezierPoint(t, pts); return (p.x - x)**2 + (p.y - y)**2; };
-                        let best = 0; for (let i = 1; i <= 32; i++) if (d2(i / 32) < d2(best / 32)) best = i;
-                        let lo = Math.max(0, (best - 1) / 32), hi = Math.min(1, (best + 1) / 32);
-                        for (let k = 0; k < 20; k++) { const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3; if (d2(m1) < d2(m2)) hi = m2; else lo = m1; }
-                        const t = (lo + hi) / 2, it = 1 - t;
-                        const dx = 3*it*it*(pts[1].x - pts[0].x) + 6*it*t*(pts[2].x - pts[1].x) + 3*t*t*(pts[3].x - pts[2].x);
-                        const dy = 3*it*it*(pts[1].y - pts[0].y) + 6*it*t*(pts[2].y - pts[1].y) + 3*t*t*(pts[3].y - pts[2].y);
-                        return Math.atan2(dy, dx) + tilt;
-                    }
-                }
-                return tilt - grot;
-            };
-            const lengthFactor = params.holeShape === 'round' ? 1 : params.holeLength * (params.holeShape === 'hex' ? 2 / Math.sqrt(3) : params.holeShape === 'tri' ? Math.sqrt(3) : 1);
-
-            // 產生所有可見孔 {x, y, dia(寬), len(長), ang}；畫布、統計與匯出共用
-            const collectDots = () => {
-                const dots = []; let row = 0;
-                const addDot = (lx, ly, bypassTrim = false) => {
-                    const [x, y] = place(lx, ly);
-                    if (!bypassTrim && !isInside(x, y)) return;
-                    const s = fieldS(x, y); const dia = sizeFromS(s);
-                    dots.push({ x, y, dia, len: dia * lengthFactor, ang: holeAngle(x, y, row, s) });
-                };
-
-                if (patternType === 'grid' || patternType === 'hexagonal') {
-                    const hex = patternType === 'hexagonal';
-                    const vStep = hex ? params.spacingY * 0.866 : params.spacingY;
-                    const x0 = -(params.gridCols - 1) / 2 * params.spacingX;
-                    for (let j = 0; j < params.gridRows; j++) {
-                        row = j;
-                        const y = (j - (params.gridRows - 1) / 2) * vStep;
-                        const stagger = hex && j % 2 !== 0 ? params.stagger : 0;
-                        if (trimTarget === 'curves') {
-                            // 只在格線與邊界相交的區段內佈點，兩端貼齊邊界
-                            insideRuns(x => isInside(...place(x, y)), x0, -x0).forEach(seg => spread(seg.s, seg.e, params.spacingX, stagger, x => addDot(x, y, true)));
-                        } else {
-                            for (let c = 0; c < params.gridCols; c++) addDot(x0 + (c + stagger) * params.spacingX, y);
-                        }
-                    }
-                } else if (patternType === 'radial') {
-                    for (let r = 1; r <= params.gridRows; r++) {
-                        row = r - 1;
-                        const rad = r * params.spacingY;
-                        const fullCount = Math.max(params.mirrorCount, Math.round((2 * Math.PI * rad / params.spacingX) / params.mirrorCount) * params.mirrorCount);
-                        const ringDot = (a) => addDot(rad * Math.cos(a), rad * Math.sin(a), trimTarget === 'curves');
-                        if (trimTarget === 'curves') {
-                            const t0 = 0, t1 = Math.PI * 2;
-                            const segments = insideRuns(a => isInside(...place(rad * Math.cos(a), rad * Math.sin(a))), t0, t1, 720);
-                            const fullRing = segments.length === 1 && segments[0].s === t0 && segments[0].e === t1;
-                            if (!fullRing) {
-                                if (segments.length > 1 && segments[0].s === t0 && segments[segments.length-1].e === t1) segments[0].s = segments.pop().s - Math.PI*2;
-                                segments.forEach(seg => spread(seg.s, seg.e, (Math.PI * 2) / fullCount, 0, ringDot));
-                                continue;
-                            }
-                        }
-                        for (let i = 0; i < fullCount; i++) ringDot((i/fullCount)*Math.PI*2);
-                    }
-                } else if (patternType === 'splineGrid') {
-                    const nU = params.gridCols - 1; const nV = params.gridRows - 1;
-                    for (let j = 0; j <= nV; j++) {
-                        row = j;
-                        const v = j / nV;
-                        const intermediatePts = params.boundarySplineA.map((pA, idx) => ({ x: pA.x * (1 - v) + params.boundarySplineB[idx].x * v, y: pA.y * (1 - v) + params.boundarySplineB[idx].y * v }));
-                        let range = { start: 0, end: 1 };
-                        if (trimTarget === 'curves') {
-                            const runs = insideRuns(t => { const p = getBezierPoint(t, intermediatePts); return isInside(...place(p.x, p.y)); }, 0, 1);
-                            if (!runs.length) continue;
-                            range = { start: runs[0].s, end: runs[runs.length - 1].e };
-                        }
-                        for (let i = 0; i <= nU; i++) {
-                            let u = i / nU;
-                            if (trimTarget === 'curves') {
-                                if (j % 2 !== 0 && i > 0 && i < nU) u = Math.min(0.999, Math.max(0.001, (i + params.stagger - 0.5) / nU));
-                                if (i === 0) u = 0; if (i === nU) u = 1;
-                            } else if (j % 2 !== 0) u = Math.min(1, Math.max(0, u + params.stagger * (1/nU)));
-                            const pF = getBezierPoint(range.start + u * (range.end - range.start), intermediatePts);
-                            addDot(pF.x, pF.y, trimTarget === 'curves');
-                        }
-                    }
-                }
-                return dots;
-            };
-
-            const holeArea_ = (d) => holeArea(d, params.holeShape, params.holeCorner);
-            // 可製造性分析：孔寬與料寬須 ≥ 板厚（沖孔經驗法則）
-            const analyze = (dots) => {
-                const t = params.thickness; const webs = nearestWebs(dots, params.holeShape);
-                const issues = new Set(); let small = 0, tight = 0, overlaps = 0, minWeb = Infinity, holeArea = 0, cutLength = 0;
-                dots.forEach((d, i) => {
-                    holeArea += holeArea_(d); cutLength += holePerimeter(d, params.holeShape, params.holeCorner);
-                    if (webs[i] < minWeb) minWeb = webs[i];
-                    if (d.dia < t - 1e-9) { small++; issues.add(i); }
-                    if (webs[i] < 0) { overlaps++; issues.add(i); }
-                    else if (webs[i] < t - 1e-9) { tight++; issues.add(i); }
-                });
-                return { issues, small, tight, overlaps, minWeb, holeArea, cutLength };
-            };
 
             const getImageRect = () => {
                 if (!bgImage) return null;
@@ -2158,13 +2361,14 @@
                 if (t < 0) { notify('Click on the model itself to pick a surface'); return; }
                 fittedRef.current = false;
                 if (!shift) { setSeeds([t]); return; }
-                const i = seeds.findIndex(sd => growPatch(model, sd, crease).includes(t));
+                const i = seeds.findIndex(sd => labels.label[sd] === labels.label[t]);
                 setSeeds(i >= 0 ? seeds.filter((_, j) => j !== i) : [...seeds, t]);
             };
 
             const switchMode = (on) => {
                 if (on === mode3D) return;
                 setMode3D(on); setCardOpen(on ? false : window.innerWidth >= 768); fittedRef.current = false;
+                if (on) setOpenSections(o => ({ ...o, model: true }));
             };
 
             // 讓行列數（或環數）剛好蓋滿邊界
@@ -2184,6 +2388,40 @@
                 }
             };
 
+            // 輸入目標開孔率：孔徑（含尺寸場的最小／最大孔徑）等比縮放；孔位不變時開孔率與縮放的平方成正比，有 Edge margin 等裁切時再以二分法修正
+            const matchOpenArea = (target) => {
+                const area = engine.getArea();
+                if (!dots.length || !(area > 0) || !(stats.openArea > 0)) { notify('Add some holes first, then set the open area'); return; }
+                const trial = (k) => { const Q = { ...params, baseDiameter: r4(params.baseDiameter * k), minDiameter: r4(params.minDiameter * k) }; const ds = engineFor(Q).collectDots(); return { Q, open: ds.reduce((a, d) => a + holeArea(d, Q.holeShape, Q.holeCorner), 0) / area * 100 }; };
+                let k = Math.sqrt(target / stats.openArea), best = trial(k);
+                if (Math.abs(best.open - target) > 0.05) {
+                    let lo = k / 3, hi = k * 3;
+                    for (let i = 0; i < 30; i++) { const mid = Math.sqrt(lo * hi), t = trial(mid); if (Math.abs(t.open - target) < Math.abs(best.open - target)) { best = t; k = mid; } if (t.open < target) lo = mid; else hi = mid; }
+                }
+                setParams(best.Q);
+                notify(`Holes ${k >= 1 ? 'enlarged' : 'reduced'} to ${fmt(k * 100, 0)}% · open area ${best.open.toFixed(1)}%`, { label: 'Undo', run: () => undoRef.current() });
+            };
+
+            // 修正可製造性：孔寬補到板厚，料寬不足時把孔位等比拉開（孔徑不變），找最小的拉開倍率
+            const fixDFM = () => {
+                const t = params.thickness;
+                let Q = { ...params };
+                if (attractorMode !== 'none' && Q.minDiameter < t) Q.minDiameter = t;
+                if (Q.baseDiameter < t) Q.baseDiameter = t;
+                if (Q.minDiameter > Q.baseDiameter) Q.baseDiameter = Q.minDiameter;
+                const ok = (P) => { const E = engineFor(P); const ds = E.collectDots(); const a = E.analyze(ds); return ds.length > 0 && a.small + a.tight + a.overlaps === 0; };
+                let f = 1;
+                if (!ok(Q)) {
+                    let hi = 1.15; while (hi < 8 && !ok(spreadParams(Q, hi))) hi *= 1.3;
+                    if (!ok(spreadParams(Q, hi))) { notify('Couldn’t find a spacing that clears every check; try fewer or smaller holes'); return; }
+                    let lo = 1; for (let i = 0; i < 14; i++) { const mid = (lo + hi) / 2; if (ok(spreadParams(Q, mid))) hi = mid; else lo = mid; }
+                    f = hi; Q = spreadParams(Q, f);
+                }
+                setParams(Q);
+                const parts = [Q.baseDiameter !== params.baseDiameter || Q.minDiameter !== params.minDiameter ? `holes at least Ø${fmt(t)}` : null, f > 1 ? `spacing ×${fmt(f, 2)}` : null].filter(Boolean);
+                notify(`Clear for ${fmt(t)} mm: ${parts.join(', ') || 'no change needed'}`, { label: 'Undo', run: () => undoRef.current() });
+            };
+
             const saveDesign = () => {
                 setMenu(null);
                 const body = JSON.stringify({ app: 'pattern LAB', version: 9, design: params }, null, 2);
@@ -2196,7 +2434,7 @@
                 file.text().then(text => {
                     const json = JSON.parse(text);
                     if (!json || typeof json !== 'object' || !(json.design || json.patternType)) throw new Error('not a design');
-                    setParams(sanitizeDesign(json.design || json));
+                    setParams(sanitizeDesign(json.design || json)); autoRef.current = null;
                     fittedRef.current = false;
                     notify(`Opened ${file.name}`);
                 }).catch(() => notify(`${file.name} isn't a pattern LAB design file`));
@@ -2204,7 +2442,7 @@
 
             const resetDesign = () => {
                 setMenu(null);
-                setParams(DEFAULT_DESIGN);
+                setParams(DEFAULT_DESIGN); autoRef.current = null;
                 fittedRef.current = false;
                 notify('Reset to defaults · Ctrl+Z to undo');
             };
@@ -2222,7 +2460,7 @@
                     else if (key === 'm') setView(v => ({ ...v, mode: v.mode === 'material' ? 'drawing' : 'material' }));
                     else if (key === '=' || key === '+') zoomBy(1.25);
                     else if (key === '-') zoomBy(0.8);
-                    else if (key === 'escape') setMenu(null);
+                    else if (key === 'escape') { if (menu) setMenu(null); else if (mode3D && seeds.length) setSeeds([]); }
                 };
                 window.addEventListener('keydown', onKey);
                 return () => window.removeEventListener('keydown', onKey);
@@ -2246,7 +2484,7 @@
             const dpr = window.devicePixelRatio || 1;
 
             // 圖案與分析只在設計變更時重算；平移縮放只重繪
-            const { dots, analysis } = useMemo(() => { const dots = collectDots(); return { dots, analysis: analyze(dots) }; }, [params, boundaryShape, uvPatch]);
+            const { dots, analysis } = useMemo(() => { const dots = engine.collectDots(); return { dots, analysis: engine.analyze(dots) }; }, [params, boundaryShape, uvPatch]);
             const stats = useMemo(() => {
                 const area = getArea();
                 const finish = FINISHES[params.finish] || FINISHES.aluminium;
@@ -2299,15 +2537,24 @@
                 : fieldOn ? `Holes line up along the ${FIELDS.find(f => f.value === attractorMode).label.toLowerCase()} field. Tilt adds an offset.`
                 : 'Choose a size field under Holes and the holes will line up along it. Until then, Tilt applies.';
             const boundarySummary = boundaryShape === 'uv' ? `Surface · ${boundW}×${boundH}` : boundaryShape === 'circle' ? `Ø${boundW}` : `${SHAPES.find(s => s.value === boundaryShape).label} · ${boundW}×${boundH}`;
-            const pct = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`;
-            const surfaceHead = uvPatch ? `${seeds.length} surface${seeds.length > 1 ? 's' : ''}, ${patchTris.length.toLocaleString()} triangles, ${fmt(uvPatch.area3D / 100, 1)} cm²` : '';
+            const pct = (v) => Math.abs(v) < 0.0005 ? '0%' : `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`;
             // 投影時面積比 = cos(坡度)，孔在斜面上沿坡度方向拉長 1/cos 倍
             const slopeStretch = uvPatch?.projected ? Math.round((1 / Math.max(1 + uvPatch.stretch[0], 0.01) - 1) * 100) : 0;
-            const surfaceText = !uvPatch ? '' : uvPatch.projected
-                ? `${surfaceHead}, projected from the top view: rows are laid out in plan and each hole drops straight down onto the surface. ${slopeStretch >= 1 ? `On the model, holes on the steepest slopes stretch up to ${slopeStretch}% along the slope.` : 'The surface is flat from above, so holes keep their shape.'}${uvPatch.skipped > 0.005 ? ` Faces steeper than ${fmt(uvPatch.maxSlope, 0)}° (${fmt(uvPatch.skipped * 100, 0)}% of the surface) stay solid; raise Max slope to perforate them, or use Cylinder or BFF for walls.` : ''}`
-                : `${surfaceHead}, ${uvPatch.solver === 'bff' ? 'flattened with Boundary First Flattening (conformal, boundary lengths kept, least area distortion)'
-                    : uvPatch.solver === 'lscm' ? 'flattened conformally with LSCM, because Boundary First Flattening needs a surface with a single outer edge'
-                    : `unwrapped ${UNWRAPS.find(u => u.value === uvPatch.method).label.toLowerCase()}${uvPatch.fallback ? ' (BFF is limited to 30,000 vertices)' : ''}`}. Area stretch ${pct(uvPatch.stretch[0])} to ${pct(uvPatch.stretch[1])}${Math.max(Math.abs(uvPatch.stretch[0]), Math.abs(uvPatch.stretch[1])) > 0.1 ? ', so holes will look distorted on the model; try another unwrap method or a smaller surface' : ''}.`;
+            const areaWarp = uvPatch && !uvPatch.projected ? Math.max(Math.abs(uvPatch.stretch[0]), Math.abs(uvPatch.stretch[1])) : 0;
+            const layoutLabel = !uvPatch ? '' : (unwrapMode === 'auto' ? 'Auto → ' : '') + (uvPatch.projected ? 'Top view' : uvPatch.solver === 'bff' ? 'BFF' : uvPatch.solver === 'lscm' ? 'LSCM' : UNWRAPS.find(u => u.value === uvPatch.method).label);
+            const surfaceFacts = !uvPatch ? [] : [
+                [uvPatch.projected && uvPatch.skipped > 0.005 ? 'Perforated area' : 'Surface', `${selectedIds.size > 1 ? `${selectedIds.size} surfaces · ` : ''}${fmt(uvPatch.area3D / 100, uvPatch.area3D < 1000 ? 2 : 1)} cm²`],
+                ['Flat size', `${fmt(boundW, 1)} × ${fmt(boundH, 1)} mm`],
+                ['Layout', layoutLabel],
+                uvPatch.projected ? ['Hole stretch', slopeStretch >= 1 ? `up to +${slopeStretch}% on slopes` : 'none, flat from above', slopeStretch > 40] : ['Area change', `${pct(uvPatch.stretch[0])} … ${pct(uvPatch.stretch[1])}`, areaWarp > 0.1],
+                ...(uvPatch.projected && uvPatch.skipped > 0.005 ? [['Left solid', `${fmt(uvPatch.skipped * 100, 0)}%, steeper than ${fmt(uvPatch.maxSlope, 0)}°`]] : [])
+            ];
+            const surfaceNote = !uvPatch ? null
+                : uvPatch.fallback ? 'BFF handles up to 30,000 vertices, so this surface was unwrapped planar.'
+                : uvPatch.solver === 'lscm' ? 'This surface has more than one edge loop, so it was flattened with LSCM instead of BFF.'
+                : uvPatch.projected && slopeStretch > 40 ? 'Holes on the steep parts stretch along the slope. Lower Max slope to keep them round, or use BFF.'
+                : areaWarp > 0.1 ? 'Holes will look distorted on the part. Try another unwrap or a smaller surface.' : null;
+            const UNWRAP_HINTS = { top: 'Rows are laid out in plan view and each hole drops straight down onto the part.', auto: 'Picks Top view, Planar, Cylinder or BFF to suit each selection.', planar: 'Projects onto the surface’s best-fit plane.', cylinder: 'Unrolls around the fitted cylinder axis; true cylinders keep their size.', conformal: 'Boundary First Flattening keeps hole shapes and edge lengths and spreads any area change.' };
             const wsColor = useMemo(() => getComputedStyle(document.documentElement).getPropertyValue('--ws').trim() || '#e5e5e1', [themeTick]);
 
             const dfmText = issueCount === 0
@@ -2350,34 +2597,54 @@
 
                     <div className="main">
                         <aside className="panel">
-                            {mode3D && <Section icon="box" title="Model" summary={uvPatch ? `${UNWRAPS.find(u => u.value === uvPatch.method).label} · ${fmt(uvPatch.area3D / 100, 1)} cm²` : model ? `${model.T.toLocaleString()} triangles` : ''} open={openSections.model} onToggle={toggleSection('model')}>
+                            {mode3D && <Section icon="box" title="Model" summary={uvPatch ? `${layoutLabel.replace('Auto → ', '')} · ${fmt(uvPatch.area3D / 100, 1)} cm²` : model ? 'No surface selected' : ''} open={openSections.model} onToggle={toggleSection('model')}>
                                 <div className="btn-row">
-                                    <button className="btn-ghost" onClick={() => stlInputRef.current.click()}><Icon name="upload" size={14} />Upload STL…</button>
-                                    {Object.entries(SAMPLES).map(([k, smp]) => <button key={k} className="btn-ghost" onClick={() => loadSample(k)}>{smp.name}</button>)}
+                                    <button className="btn-ghost strong" onClick={() => stlInputRef.current.click()}><Icon name="upload" size={14} />{model && !SAMPLE_NAMES.has(model.name) ? 'Replace STL…' : 'Upload STL…'}</button>
+                                    <span className="samples">or try
+                                        {Object.entries(SAMPLES).map(([k, smp]) => <button key={k} className={`chip ${model?.name === smp.name ? 'on' : ''}`} title={`Load the ${smp.name.toLowerCase()} sample`} onClick={() => loadSample(k)}>{smp.short}</button>)}
+                                    </span>
                                 </div>
                                 <input ref={stlInputRef} type="file" hidden accept=".stl" onChange={handleSTL} />
-                                {model && <p className="hint">{model.name}: {model.T.toLocaleString()} triangles, {fmt(model.bbox[3] - model.bbox[0], 1)} × {fmt(model.bbox[4] - model.bbox[1], 1)} × {fmt(model.bbox[5] - model.bbox[2], 1)} mm.</p>}
+                                {model && <p className="meta" title={model.name}><b>{model.name}</b> · {fmt(model.bbox[3] - model.bbox[0], 1)} × {fmt(model.bbox[4] - model.bbox[1], 1)} × {fmt(model.bbox[5] - model.bbox[2], 1)} mm · {model.T.toLocaleString()} triangles</p>}
+
+                                <div className={`surface-card ${uvPatch ? '' : 'empty'}`}>
+                                    {uvPatch ? <>
+                                        <dl className="facts">
+                                            {surfaceFacts.map(([k, v, warn]) => <div key={k}><dt>{k}</dt><dd className={warn ? 'warn' : ''}>{v}</dd></div>)}
+                                        </dl>
+                                        {surfaceNote && <p className="note"><Icon name="info" size={13} />{surfaceNote}</p>}
+                                        <div className="btn-row">
+                                            <button className={`btn-ghost ${fitPending ? 'accent' : ''}`} disabled={!fitPending} title="Scale the whole pattern (pitch, hole sizes and size field) to this surface and centre it" onClick={() => applyFit(false)}><Icon name={fitPending ? 'maximize-2' : 'check'} size={14} />{fitPending ? 'Fit pattern' : 'Pattern fitted'}</button>
+                                            <button className="btn-ghost" title="Clear the selection (Esc)" onClick={() => setSeeds([])}><Icon name="x" size={14} />Clear</button>
+                                        </div>
+                                    </> : <p className="hint"><Icon name="mouse-pointer-click" size={14} />{slopeBlocked ? `Every face of this selection is steeper than ${fmt(maxSlope, 0)}° from above, so Top view has nowhere to put holes. Raise Max slope, or switch to Cylinder or BFF.` : 'Click a surface in the 3D view to perforate it. Shift-click adds or removes surfaces.'}</p>}
+                                    <label className="check"><input type="checkbox" checked={autoFit} onChange={e => { setAutoFit(e.target.checked); autoRef.current = null; }} />Auto-fit the pattern to each new surface</label>
+                                </div>
+
+                                <div className="subhead">Unwrap</div>
+                                <Segmented label="Unwrap method" inline tight options={UNWRAPS} value={unwrapMode} onChange={setUnwrapMode} />
+                                <p className="hint">{UNWRAP_HINTS[unwrapMode]}</p>
+                                {(unwrapMode === 'top' || uvPatch?.projected) && <Param id="maxslope" label="Max slope" value={maxSlope} min={10} max={85} step={1} decimals={0} unit="°" onChange={setMaxSlope} />}
+                                <Param id="crease" label="Split angle" value={crease} min={5} max={90} step={1} decimals={0} unit="°" onChange={setCrease} />
+
+                                <div className="subhead">Import</div>
                                 <div className="row2">
                                     <div className="param"><span className="param-label">STL units</span><Segmented label="STL units" inline tight options={UNITS} value={unit} onChange={setUnit} /></div>
                                     <div className="param"><span className="param-label">Up axis</span><Segmented label="Up axis" inline tight options={UP_AXES} value={upAxis} onChange={setUpAxis} /></div>
                                 </div>
-                                <Param id="crease" label="Split angle" value={crease} min={5} max={90} step={1} decimals={0} unit="°" onChange={setCrease} />
-                                <div className="param"><span className="param-label">Unwrap</span><Segmented label="Unwrap method" inline tight options={UNWRAPS} value={unwrapMode} onChange={setUnwrapMode} /></div>
-                                {(unwrapMode === 'top' || uvPatch?.projected) && <Param id="maxslope" label="Max slope" value={maxSlope} min={10} max={85} step={1} decimals={0} unit="°" onChange={setMaxSlope} />}
-                                <p className="hint">{uvPatch ? surfaceText : slopeBlocked ? `Every face of this surface is steeper than ${fmt(maxSlope, 0)}° from above, so the top view has nowhere to put holes. Raise Max slope, or use Cylinder or BFF for walls.` : 'Click a surface in the 3D view to apply the pattern. The model is split wherever neighbouring faces bend more than the split angle. Shift-click adds or removes surfaces.'}</p>
-                                {seeds.length > 0 && <div><button className="btn-ghost" onClick={() => setSeeds([])}><Icon name="x" size={14} />Clear selection</button></div>}
                             </Section>}
 
                             <Section icon="grid-3x3" title="Array" summary={arraySummary} open={openSections.array} onToggle={toggleSection('array')}>
                                 <Segmented label="Array type" options={PATTERNS} value={patternType} onChange={set('patternType')} />
+                                {!mode3D && params.fitFrame && <div className="note"><Icon name="info" size={13} /><span>The pattern is still sized for a {fmt(params.fitFrame.w, 1)} × {fmt(params.fitFrame.h, 1)} mm surface. <button className="link" onClick={() => applyFit(false)}>Fit it to this panel</button></span></div>}
                                 {patternType === 'radial' ? <>
                                     <div className="row2">
                                         <Param id="rings" label="Rings" value={params.gridRows} min={1} max={150} step={1} decimals={0} onChange={set('gridRows')} />
                                         <Param id="mirror" label="Symmetry" value={params.mirrorCount} min={1} max={32} step={1} decimals={0} unit="×" onChange={set('mirrorCount')} />
                                     </div>
                                     <div className="row2">
-                                        <Param id="arc-pitch" label="Arc pitch" value={params.spacingX} min={1.5} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingX')} />
-                                        <Param id="ring-pitch" label="Ring pitch" value={params.spacingY} min={1.5} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingY')} />
+                                        <Param id="arc-pitch" label="Arc pitch" value={params.spacingX} min={0.3} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingX')} />
+                                        <Param id="ring-pitch" label="Ring pitch" value={params.spacingY} min={0.3} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingY')} />
                                     </div>
                                 </> : <>
                                     <div className="row2">
@@ -2385,13 +2652,13 @@
                                         <Param id="rows" label="Rows" value={params.gridRows} min={2} max={150} step={1} decimals={0} onChange={set('gridRows')} />
                                     </div>
                                     {patternType !== 'splineGrid' && <div className="row2">
-                                        <Param id="pitch-x" label="X pitch" value={params.spacingX} min={1.5} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingX')} />
-                                        <Param id="pitch-y" label="Y pitch" value={params.spacingY} min={1.5} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingY')} />
+                                        <Param id="pitch-x" label="X pitch" value={params.spacingX} min={0.3} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingX')} />
+                                        <Param id="pitch-y" label="Y pitch" value={params.spacingY} min={0.3} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingY')} />
                                     </div>}
                                     {patternType !== 'grid' && <Param id="stagger" label="Row stagger" value={params.stagger} min={0} max={1} step={0.01} decimals={2} onChange={set('stagger')} />}
                                     {patternType === 'splineGrid' && <p className="hint"><span className="legend" style={{ background: COLORS.splineA }}></span>Drag the amber control points to bend the rows.</p>}
                                 </>}
-                                {patternType !== 'splineGrid' && <div><button className="btn-ghost" onClick={fillBoundary}><Icon name="maximize" size={14} />Fill boundary</button></div>}
+                                {patternType !== 'splineGrid' && <div><button className="btn-ghost" title="Add or remove columns and rows so the array just covers the boundary; the pitch stays" onClick={fillBoundary}><Icon name="maximize" size={14} />{uvPatch ? 'Fill surface' : 'Fill boundary'}</button></div>}
                                 <div className="subhead">Pattern transform</div>
                                 <ScaleControl onStart={scaleStart} onScale={scaleBy} onEnd={scaleEnd} />
                                 <label className="check"><input type="checkbox" checked={params.scaleHoles} onChange={e => set('scaleHoles')(e.target.checked)} />Scale hole sizes too</label>
@@ -2400,20 +2667,27 @@
                                     <Param id="pattern-x" label="Offset X" value={params.patternX} min={-300} max={300} step={0.5} unit="mm" typedMax={5000} onChange={set('patternX')} />
                                     <Param id="pattern-y" label="Offset Y" value={-params.patternY} min={-300} max={300} step={0.5} unit="mm" typedMax={5000} onChange={v => set('patternY')(-v)} />
                                 </div>
-                                <p className="hint"><span className="legend" style={{ background: COLORS.pattern }}></span>Scale changes {patternType === 'splineGrid' ? 'the spline rows' : 'the pitch'}{params.scaleHoles ? ' and hole sizes' : ''} together. On the canvas, drag the violet diamond to move the pattern, the round knob to rotate it (Shift snaps to 15°) and the square knob to scale it.</p>
+                                <p className="hint"><span className="legend" style={{ background: COLORS.pattern }}></span>On the canvas: the violet diamond moves the pattern, the round knob rotates it (Shift snaps to 15°), the square knob scales it.</p>
                                 {(params.rotation || params.patternX || params.patternY) ? <div><button className="btn-ghost" onClick={() => setParams(p => ({ ...p, rotation: 0, patternX: 0, patternY: 0 }))}><Icon name="rotate-ccw" size={14} />Reset position and rotation</button></div> : null}
                             </Section>
 
                             <Section icon="circle-dot" title="Holes" summary={holeSummary} open={openSections.holes} onToggle={toggleSection('holes')}>
                                 <Segmented label="Size field" options={FIELDS} value={attractorMode} onChange={set('attractorMode')} />
                                 {fieldOn ? <div className="row2">
-                                    <Param id="max-dia" label="Max Ø" value={params.baseDiameter} min={0.5} max={10} step={0.1} decimals={2} unit="mm" typedMax={50} onChange={set('baseDiameter')} />
-                                    <Param id="min-dia" label="Min Ø" value={params.minDiameter} min={0.1} max={5} step={0.1} decimals={2} unit="mm" typedMax={50} onChange={set('minDiameter')} />
-                                </div> : <Param id="max-dia" label="Hole Ø" value={params.baseDiameter} min={0.5} max={10} step={0.1} decimals={2} unit="mm" typedMax={50} onChange={set('baseDiameter')} />}
+                                    <Param id="max-dia" label="Max Ø" value={params.baseDiameter} min={0.1} max={10} step={0.1} decimals={2} unit="mm" typedMax={50} onChange={set('baseDiameter')} />
+                                    <Param id="min-dia" label="Min Ø" value={params.minDiameter} min={0.05} max={5} step={0.1} decimals={2} unit="mm" typedMax={50} onChange={set('minDiameter')} />
+                                </div> : <Param id="max-dia" label="Hole Ø" value={params.baseDiameter} min={0.1} max={10} step={0.1} decimals={2} unit="mm" typedMax={50} onChange={set('baseDiameter')} />}
                                 {fieldOn && <div className="row2">
-                                    <Param id="influence" label="Influence" value={params.influenceRange} min={5} max={200} step={1} unit="mm" typedMax={2000} onChange={set('influenceRange')} />
+                                    <Param id="influence" label="Influence" value={params.influenceRange} min={1} max={200} step={1} unit="mm" typedMax={2000} onChange={set('influenceRange')} />
                                     <Param id="falloff" label="Falloff" value={params.falloff} min={0.1} max={5} step={0.1} decimals={2} onChange={set('falloff')} />
                                 </div>}
+                                <div className="param">
+                                    <div className="param-head">
+                                        <label className="param-label" htmlFor="open-area-num">Open area</label>
+                                        <NumberField id="open-area-num" label="Open area" value={stats.openArea} min={0.1} max={90} step={0.5} decimals={1} unit="%" onCommit={matchOpenArea} />
+                                    </div>
+                                    <p className="hint">Type a target and every hole is resized to reach it; positions stay.</p>
+                                </div>
                                 {fieldOn && <p className="hint"><span className="legend" style={{ background: COLORS[attractorMode] }}></span>
                                     {attractorMode === 'radial' ? 'Holes shrink toward the dashed ring. Drag its handle to change the radius.' : attractorMode === 'curve' ? 'Holes shrink toward the curve. Drag its four control points.' : 'Holes shrink toward the line. Drag either end.'}
                                 </p>}
@@ -2448,7 +2722,8 @@
                                     </div>}
                                 </>}
                                 <Segmented label="Trim mode" inline options={TRIMS} value={trimTarget} onChange={set('trimTarget')} />
-                                <p className="hint">{trimTarget === 'curves' ? 'Rows and rings are re-spaced so holes land exactly on the edge.' : 'Holes whose centre falls outside are removed; edge holes stay whole.'}</p>
+                                <Param id="edge-margin" label="Edge margin" value={params.edgeMargin} min={0} max={20} step={0.1} decimals={1} unit="mm" typedMax={200} onChange={set('edgeMargin')} />
+                                <p className="hint">{trimTarget === 'curves' ? 'Rows and rings are re-spaced so the end holes sit on the edge' : 'Holes whose centre falls outside are removed'}{params.edgeMargin > 0 ? `, and every hole stays whole and at least ${fmt(params.edgeMargin, 1)} mm inside it.` : trimTarget === 'curves' ? '.' : '; edge holes are cut through. Set an edge margin to keep a solid border.'}</p>
                             </Section>
 
                             <Section icon="layers" title="Material" summary={`${fmt(params.thickness)} mm · ${finish.label}`} open={openSections.material} onToggle={toggleSection('material')}>
@@ -2478,7 +2753,7 @@
 
                         <section className={`stage ${mode3D ? 'is3d' : ''}`}>
                           <div className="panes">
-                            {mode3D && <Viewport3D model={model} upAxis={upAxis} patch={uvPatch} dots={dots} holeShape={params.holeShape} holeCorner={params.holeCorner} finishKey={params.finish} finish={finish} guides={view.guides} bg={wsColor} onPick={onPick} apiRef={viewApi} />}
+                            {mode3D && <Viewport3D model={model} labels={labels} selectedIds={selectedIds} upAxis={upAxis} patch={uvPatch} dots={dots} holeShape={params.holeShape} holeCorner={params.holeCorner} finishKey={params.finish} finish={finish} guides={view.guides} bg={wsColor} onPick={onPick} apiRef={viewApi} />}
                             <div className="table" ref={tableRef}>
                                 {canvasDim.w > 0 && <canvas ref={canvasRef} width={Math.round(canvasDim.w * dpr)} height={Math.round(canvasDim.h * dpr)} style={{ width: canvasDim.w, height: canvasDim.h, cursor: dragMode === 'canvasPan' || dragMode === 'pinch' ? 'grabbing' : undefined }}
                                     onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
@@ -2501,7 +2776,7 @@
                                 <div className={`overlay card ${cardOpen ? '' : 'collapsed'}`}>
                                     <button className="card-head" aria-expanded={cardOpen} onClick={() => setCardOpen(o => !o)}>
                                         <span className="card-title">Analysis</span>
-                                        {!cardOpen && <span className="card-sum">{stats.holes.toLocaleString()} holes · {stats.openArea.toFixed(1)}%</span>}
+                                        {!cardOpen && <span className="card-sum">{stats.holes.toLocaleString()} holes · {stats.openArea.toFixed(1)}%{issueCount > 0 && <span className="sum-warn" title={dfmText}> · {issueCount.toLocaleString()} issues</span>}</span>}
                                         <Icon name="chevron-down" size={14} className={`chev ${cardOpen ? 'up' : ''}`} />
                                     </button>
                                     {cardOpen && <>
@@ -2522,12 +2797,13 @@
                                         <div className={`dfm ${issueCount ? 'warn' : 'ok'}`} title={issueCount ? 'Hover to highlight these holes' : undefined}
                                             onMouseEnter={() => issueCount && setHoverHighlight('issues')} onMouseLeave={() => setHoverHighlight('none')}>
                                             <Icon name={issueCount ? 'triangle-alert' : 'circle-check'} size={14} /><span>{dfmText}</span>
+                                            {issueCount > 0 && <button className="dfm-fix" title="Raise holes to the sheet thickness and spread the pattern until every web clears it" onClick={fixDFM}>Fix</button>}
                                         </div>
                                     </>}
                                 </div>
 
                                 {mode3D && !uvPatch && <div className="overlay pane-msg-2d">{slopeBlocked ? 'This surface is too steep for the top view. Raise Max slope or pick another unwrap.' : 'Select a surface in the 3D view to unwrap it here.'}</div>}
-                                {toast && <div key={toast.id} className="toast" role="status">{toast.msg}</div>}
+                                {toast && <div key={toast.id} className="toast" role="status">{toast.msg}{toast.action && <button onClick={() => { toast.action.run(); setToast(null); }}>{toast.action.label}</button>}</div>}
                             </div>
                           </div>
 

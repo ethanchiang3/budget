@@ -95,6 +95,9 @@
         .chev.up { transform: rotate(180deg); }
         .sec-body { display: grid; gap: 16px; padding: 2px 16px 20px; }
         .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+        .subhead { padding-top: 14px; border-top: 1px solid var(--line); font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+        .check { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); cursor: pointer; }
+        .check input { width: 14px; height: 14px; margin: 0; accent-color: var(--fg); }
         .hint { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
         .legend { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 4px 1px 0; vertical-align: middle; }
 
@@ -241,7 +244,7 @@
             // ABS：啞光、幾乎無金屬漸層；密度約 1.04–1.06 g/cm³
             abs: { label: 'ABS', name: 'ABS plastic', sheet: ['#e3e2de', '#d3d1cc'], hole: '#1d1d1d', density: 1.05, plastic: true }
         };
-        const COLORS = { boundary: '#ef4444', curve: '#3b82f6', line: '#eab308', radial: '#10b981', splineA: '#f59e0b', splineB: '#d97706', image: '#3b82f6' };
+        const COLORS = { boundary: '#ef4444', curve: '#3b82f6', line: '#eab308', radial: '#10b981', splineA: '#f59e0b', splineB: '#d97706', image: '#3b82f6', pattern: '#8b5cf6' };
         // claude.ai Artifact 的 downloads capability 接受的副檔名；其他格式打包成 zip
         const SAVE_EXTS = ['gif', 'png', 'jpg', 'jpeg', 'webp', 'mp4', 'webm', 'txt', 'json', 'md', 'csv', 'html', 'svg', 'pdf', 'zip'];
 
@@ -254,6 +257,7 @@
             quadPts: [ {x: -100, y: -50}, {x: 100, y: -50}, {x: 120, y: 50}, {x: -120, y: 50} ],
             influenceRange: 35, attractorRadius: 60, falloff: 1.0,
             rotation: 0, mirrorCount: 6,
+            patternX: 0, patternY: 0, scaleHoles: true,
             cvs: [ {x: -50, y: -20}, {x: -20, y: 30}, {x: 15, y: -25}, {x: 50, y: 20} ],
             linePts: [ {x: -60, y: 0}, {x: 60, y: 0} ],
             boundarySplineA: [ {x: -150, y: -60}, {x: -60, y: -90}, {x: 40, y: -30}, {x: 150, y: -60} ],
@@ -367,6 +371,25 @@
                 ))}
             </div>
         );
+
+        // 相對縮放：以按下時的狀態為基準（對數刻度，中間 = 100%），放開後歸回 100%，新數值已寫入孔距與孔徑
+        const ScaleControl = ({ onStart, onScale, onEnd }) => {
+            const [sv, setSv] = useState(0);
+            const active = useRef(false);
+            const begin = () => { if (!active.current) { active.current = true; onStart(); } };
+            const end = () => { if (active.current) { active.current = false; onEnd(); } setSv(0); };
+            return (
+                <div className="param">
+                    <div className="param-head">
+                        <label className="param-label" htmlFor="pattern-scale-range">Scale</label>
+                        <NumberField id="pattern-scale-num" label="Scale" value={Math.round(2 ** sv * 100)} min={10} max={1000} step={1} decimals={0} unit="%" onCommit={v => { onStart(); onScale(v / 100); onEnd(); }} />
+                    </div>
+                    <input id="pattern-scale-range" type="range" min={-2} max={2} step={0.01} value={sv} style={{ '--pct': `${(sv + 2) / 4 * 100}%` }}
+                        onPointerDown={begin} onChange={e => { begin(); const v = parseFloat(e.target.value); setSv(v); onScale(2 ** v); }}
+                        onPointerUp={end} onKeyUp={end} onBlur={end} />
+                </div>
+            );
+        };
 
         const Section = ({ icon, title, summary, open, onToggle, children }) => (
             <section className="sec">
@@ -1554,6 +1577,26 @@
             };
             const sizeFromS = (s) => attractorMode === 'none' ? params.baseDiameter : params.minDiameter + (params.baseDiameter - params.minDiameter) * s;
 
+            // 圖案群組變換：圖案先在自己的座標中產生，再旋轉（逆時針為正）並平移到 Offset
+            const grot = (params.rotation || 0) * Math.PI / 180, gc = Math.cos(grot), gs = Math.sin(grot);
+            const place = (x, y) => [params.patternX + x * gc + y * gs, params.patternY - x * gs + y * gc];
+            const unplace = (x, y) => { const dx = x - params.patternX, dy = y - params.patternY; return [dx * gc - dy * gs, dx * gs + dy * gc]; };
+            // 畫布上的群組控制：中心（移動）、+x 方向的旋轉把手、上方的縮放把手，與縮放無關固定 56px
+            const gizmoPts = () => { const L = 56 / view.zoom; return { c: [params.patternX, params.patternY], r: place(L, 0), s: place(0, -L) }; };
+            // 以基準狀態等比縮放圖案群組：孔距（與孔徑）一起變，樣條控制點以圖案原點縮放
+            // 只動目前陣列類型用到的數值：樣條陣列縮放控制點，其他陣列縮放孔距
+            const scaledFrom = (b, k) => {
+                const out = b.patternType === 'splineGrid'
+                    ? { boundarySplineA: b.boundarySplineA.map(pt => ({ x: pt.x * k, y: pt.y * k })), boundarySplineB: b.boundarySplineB.map(pt => ({ x: pt.x * k, y: pt.y * k })) }
+                    : { spacingX: +(b.spacingX * k).toFixed(4), spacingY: +(b.spacingY * k).toFixed(4) };
+                if (b.scaleHoles) { out.baseDiameter = +(b.baseDiameter * k).toFixed(4); out.minDiameter = +(b.minDiameter * k).toFixed(4); }
+                return out;
+            };
+            const scaleBase = useRef(null);
+            const scaleStart = () => { scaleBase.current = params; };
+            const scaleBy = (k) => { const b = scaleBase.current || params; setParams(p => ({ ...p, ...scaledFrom(b, k) })); };
+            const scaleEnd = () => { scaleBase.current = null; };
+
             // 孔的方向（螢幕座標弧度）：固定、沿尺寸場、或由圖案中心向外；Tilt 為逆時針偏移
             const holeAngle = (x, y, row, s) => {
                 if (params.holeShape === 'round') return 0;
@@ -1563,7 +1606,7 @@
                 if (odd && params.holeAlt === 'flip') tilt += Math.PI;
                 // 越靠近吸引子轉得越多（與孔徑共用同一條衰減曲線）
                 if (attractorMode !== 'none') tilt -= params.holeTwist * (1 - s) * Math.PI / 180;
-                if (params.holeOrient === 'radial') return Math.atan2(y, x) + tilt;
+                if (params.holeOrient === 'radial') return Math.atan2(y - params.patternY, x - params.patternX) + tilt;
                 if (params.holeOrient === 'field') {
                     if (attractorMode === 'radial') return Math.atan2(y, x) + Math.PI / 2 + tilt;
                     if (attractorMode === 'line') { const [a, b] = params.linePts; return Math.atan2(b.y - a.y, b.x - a.x) + tilt; }
@@ -1578,14 +1621,15 @@
                         return Math.atan2(dy, dx) + tilt;
                     }
                 }
-                return tilt;
+                return tilt - grot;
             };
             const lengthFactor = params.holeShape === 'round' ? 1 : params.holeLength * (params.holeShape === 'hex' ? 2 / Math.sqrt(3) : params.holeShape === 'tri' ? Math.sqrt(3) : 1);
 
             // 產生所有可見孔 {x, y, dia(寬), len(長), ang}；畫布、統計與匯出共用
             const collectDots = () => {
                 const dots = []; let row = 0;
-                const addDot = (x, y, bypassTrim = false) => {
+                const addDot = (lx, ly, bypassTrim = false) => {
+                    const [x, y] = place(lx, ly);
                     if (!bypassTrim && !isInside(x, y)) return;
                     const s = fieldS(x, y); const dia = sizeFromS(s);
                     dots.push({ x, y, dia, len: dia * lengthFactor, ang: holeAngle(x, y, row, s) });
@@ -1601,21 +1645,20 @@
                         const stagger = hex && j % 2 !== 0 ? params.stagger : 0;
                         if (trimTarget === 'curves') {
                             // 只在格線與邊界相交的區段內佈點，兩端貼齊邊界
-                            insideRuns(x => isInside(x, y), x0, -x0).forEach(seg => spread(seg.s, seg.e, params.spacingX, stagger, x => addDot(x, y, true)));
+                            insideRuns(x => isInside(...place(x, y)), x0, -x0).forEach(seg => spread(seg.s, seg.e, params.spacingX, stagger, x => addDot(x, y, true)));
                         } else {
                             for (let c = 0; c < params.gridCols; c++) addDot(x0 + (c + stagger) * params.spacingX, y);
                         }
                     }
                 } else if (patternType === 'radial') {
-                    const rot = (params.rotation * Math.PI) / 180;
                     for (let r = 1; r <= params.gridRows; r++) {
                         row = r - 1;
                         const rad = r * params.spacingY;
                         const fullCount = Math.max(params.mirrorCount, Math.round((2 * Math.PI * rad / params.spacingX) / params.mirrorCount) * params.mirrorCount);
                         const ringDot = (a) => addDot(rad * Math.cos(a), rad * Math.sin(a), trimTarget === 'curves');
                         if (trimTarget === 'curves') {
-                            const t0 = rot; const t1 = rot + Math.PI * 2;
-                            const segments = insideRuns(a => isInside(rad * Math.cos(a), rad * Math.sin(a)), t0, t1, 720);
+                            const t0 = 0, t1 = Math.PI * 2;
+                            const segments = insideRuns(a => isInside(...place(rad * Math.cos(a), rad * Math.sin(a))), t0, t1, 720);
                             const fullRing = segments.length === 1 && segments[0].s === t0 && segments[0].e === t1;
                             if (!fullRing) {
                                 if (segments.length > 1 && segments[0].s === t0 && segments[segments.length-1].e === t1) segments[0].s = segments.pop().s - Math.PI*2;
@@ -1623,7 +1666,7 @@
                                 continue;
                             }
                         }
-                        for (let i = 0; i < fullCount; i++) ringDot((i/fullCount)*Math.PI*2 + rot);
+                        for (let i = 0; i < fullCount; i++) ringDot((i/fullCount)*Math.PI*2);
                     }
                 } else if (patternType === 'splineGrid') {
                     const nU = params.gridCols - 1; const nV = params.gridRows - 1;
@@ -1633,7 +1676,7 @@
                         const intermediatePts = params.boundarySplineA.map((pA, idx) => ({ x: pA.x * (1 - v) + params.boundarySplineB[idx].x * v, y: pA.y * (1 - v) + params.boundarySplineB[idx].y * v }));
                         let range = { start: 0, end: 1 };
                         if (trimTarget === 'curves') {
-                            const runs = insideRuns(t => { const p = getBezierPoint(t, intermediatePts); return isInside(p.x, p.y); }, 0, 1);
+                            const runs = insideRuns(t => { const p = getBezierPoint(t, intermediatePts); return isInside(...place(p.x, p.y)); }, 0, 1);
                             if (!runs.length) continue;
                             range = { start: runs[0].s, end: runs[runs.length - 1].e };
                         }
@@ -1751,9 +1794,9 @@
                         ctx.save(); [params.boundarySplineA, params.boundarySplineB].forEach((pts, idx) => {
                             const color = idx === 0 ? COLORS.splineA : COLORS.splineB;
                             ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
-                            for (let t = 0; t <= 1.0001; t += 0.02) { const p = getBezierPoint(Math.min(t, 1), pts); if (t === 0) ctx.moveTo(X(p.x), Y(p.y)); else ctx.lineTo(X(p.x), Y(p.y)); }
+                            for (let t = 0; t <= 1.0001; t += 0.02) { const bp = getBezierPoint(Math.min(t, 1), pts); const [px, py] = place(bp.x, bp.y); if (t === 0) ctx.moveTo(X(px), Y(py)); else ctx.lineTo(X(px), Y(py)); }
                             ctx.stroke();
-                            pts.forEach(p => handle(p.x, p.y, color, 5, 1.5));
+                            pts.forEach(p => handle(...place(p.x, p.y), color, 5, 1.5));
                         }); ctx.restore();
                     }
 
@@ -1774,6 +1817,18 @@
                             pts.forEach(p => handle(p.x, p.y, color));
                         }
                     } ctx.restore();
+
+                    // 圖案群組控制：菱形 = 移動、圓形 = 旋轉、方形 = 縮放
+                    const gz = gizmoPts();
+                    ctx.save(); ctx.strokeStyle = COLORS.pattern; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+                    ctx.beginPath(); ctx.moveTo(X(gz.c[0]), Y(gz.c[1])); ctx.lineTo(X(gz.r[0]), Y(gz.r[1])); ctx.moveTo(X(gz.c[0]), Y(gz.c[1])); ctx.lineTo(X(gz.s[0]), Y(gz.s[1])); ctx.stroke();
+                    ctx.setLineDash([]);
+                    const gx0 = X(gz.c[0]), gy0 = Y(gz.c[1]);
+                    ctx.fillStyle = COLORS.pattern; ctx.beginPath(); ctx.moveTo(gx0, gy0 - 7); ctx.lineTo(gx0 + 7, gy0); ctx.lineTo(gx0, gy0 + 7); ctx.lineTo(gx0 - 7, gy0); ctx.closePath(); ctx.fill();
+                    ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
+                    handle(gz.r[0], gz.r[1], COLORS.pattern, 6);
+                    ctx.fillStyle = COLORS.pattern; ctx.beginPath(); ctx.rect(X(gz.s[0]) - 5.5, Y(gz.s[1]) - 5.5, 11, 11); ctx.fill(); ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
+                    ctx.restore();
 
                     // 參考圖外框與縮放把手
                     if (img) {
@@ -1824,10 +1879,14 @@
                 } else if (boundaryShape === 'quad') {
                     for (let i = 0; i < 4; i++) if (near(params.quadPts[i].x, params.quadPts[i].y)) return { mode: 'points', key: 'quadPts', index: i };
                 }
+                const gz = gizmoPts();
+                if (near(gz.r[0], gz.r[1])) return { mode: 'patternRotate', a0: Math.atan2(-(m.y - params.patternY), m.x - params.patternX), r0: params.rotation };
+                if (near(gz.s[0], gz.s[1])) return { mode: 'patternScale', d0: Math.max(dist(m.x, m.y, params.patternX, params.patternY), 1e-6), base: params };
+                if (near(gz.c[0], gz.c[1])) return { mode: 'patternMove', start: m, x0: params.patternX, y0: params.patternY };
                 if (attractorMode === 'radial' && near(params.attractorRadius, 0)) return { mode: 'radialRadius' };
                 if (patternType === 'splineGrid') {
                     for (let key of ['boundarySplineA', 'boundarySplineB']) {
-                        for (let i = 0; i < 4; i++) if (near(params[key][i].x, params[key][i].y)) return { mode: 'points', key, index: i };
+                        for (let i = 0; i < 4; i++) if (near(...place(params[key][i].x, params[key][i].y))) return { mode: 'points', key, index: i, local: true };
                     }
                 }
                 const attrKey = attractorMode === 'curve' ? 'cvs' : attractorMode === 'line' ? 'linePts' : null;
@@ -1893,8 +1952,20 @@
                     setParams(p => ({ ...p, bRad: Math.max(5, dist(mx, my, p.bCX, p.bCY)) }));
                 } else if (drag.mode === 'radialRadius') {
                     setParams(p => ({ ...p, attractorRadius: Math.max(0, Math.sqrt(mx*mx + my*my)) }));
+                } else if (drag.mode === 'patternMove') {
+                    setParams(p => ({ ...p, patternX: drag.x0 + mx - drag.start.x, patternY: drag.y0 + my - drag.start.y }));
+                } else if (drag.mode === 'patternRotate') {
+                    let r = drag.r0 + (Math.atan2(-(my - params.patternY), mx - params.patternX) - drag.a0) * 180 / Math.PI;
+                    r = ((r + 180) % 360 + 360) % 360 - 180;
+                    if (e.shiftKey) r = Math.round(r / 15) * 15;
+                    setParams(p => ({ ...p, rotation: +r.toFixed(2) }));
+                } else if (drag.mode === 'patternScale') {
+                    const k = clamp(dist(mx, my, drag.base.patternX, drag.base.patternY) / drag.d0, 0.1, 10);
+                    setParams(p => ({ ...p, ...scaledFrom(drag.base, k) }));
                 } else if (drag.mode === 'points') {
-                    setParams(p => { const updated = [...p[drag.key]]; updated[drag.index] = { x: mx, y: my }; return { ...p, [drag.key]: updated }; });
+                    // 陣列樣條的控制點存在圖案座標中
+                    const [px, py] = drag.local ? unplace(mx, my) : [mx, my];
+                    setParams(p => { const updated = [...p[drag.key]]; updated[drag.index] = { x: px, y: py }; return { ...p, [drag.key]: updated }; });
                 } else if (drag.mode === 'imageScale') {
                     // 固定左上角，拖曳右下把手縮放（維持比例）
                     const aspect = (bgImage.height / bgImage.width) || 1;
@@ -2071,14 +2142,17 @@
 
             // 讓行列數（或環數）剛好蓋滿邊界
             const fillBoundary = () => {
-                const b = getBounds(); const far = (lo, hi) => Math.max(Math.abs(lo), Math.abs(hi));
+                // 以圖案座標（扣掉旋轉與 Offset）計算需要的範圍
+                const b = getBounds();
+                const corners = [[b.minX, b.minY], [b.maxX, b.minY], [b.minX, b.maxY], [b.maxX, b.maxY]].map(([x, y]) => unplace(x, y));
                 if (patternType === 'radial') {
-                    const r = Math.max(...[[b.minX, b.minY], [b.maxX, b.minY], [b.minX, b.maxY], [b.maxX, b.maxY]].map(([x, y]) => Math.hypot(x, y)));
+                    const r = Math.max(...corners.map(([x, y]) => Math.hypot(x, y)));
                     setParams(p => ({ ...p, gridRows: clamp(Math.ceil(r / p.spacingY), 1, 150) }));
                     notify('Rings now reach the boundary');
                 } else {
                     const vStep = patternType === 'hexagonal' ? params.spacingY * 0.866 : params.spacingY;
-                    setParams(p => ({ ...p, gridCols: clamp(Math.ceil(2 * far(b.minX, b.maxX) / p.spacingX) + 2, 2, 150), gridRows: clamp(Math.ceil(2 * far(b.minY, b.maxY) / vStep) + 2, 2, 150) }));
+                    const fx = Math.max(...corners.map(c => Math.abs(c[0]))), fy = Math.max(...corners.map(c => Math.abs(c[1])));
+                    setParams(p => ({ ...p, gridCols: clamp(Math.ceil(2 * fx / p.spacingX) + 2, 2, 150), gridRows: clamp(Math.ceil(2 * fy / vStep) + 2, 2, 150) }));
                     notify('Columns and rows now cover the boundary');
                 }
             };
@@ -2188,7 +2262,7 @@
                 return square && Math.abs(params.stagger - 0.5) < 1e-6 ? `R${d} T${fmt(params.spacingX)}` : `R${d} staggered`;
             })();
 
-            const arraySummary = (params.holeShape === 'round' && designation) || (patternType === 'radial' ? `Radial · ${params.gridRows} rings` : `Spline · ${params.gridCols}×${params.gridRows}`);
+            const arraySummary = ((params.holeShape === 'round' && designation) || (patternType === 'radial' ? `Radial · ${params.gridRows} rings` : patternType === 'splineGrid' ? `Spline · ${params.gridCols}×${params.gridRows}` : PATTERNS.find(pt => pt.value === patternType).label)) + (params.rotation ? ` · ${fmt(params.rotation, 1)}°` : '');
             const holeSummary = fieldOn ? `${FIELDS.find(f => f.value === attractorMode).label} · Ø${fmt(params.minDiameter)}–${fmt(params.baseDiameter)}` : `Ø${fmt(params.baseDiameter)}`;
             const roundHoles = params.holeShape === 'round';
             const orientLabel = ORIENTS.find(o => o.value === params.holeOrient).label;
@@ -2277,7 +2351,6 @@
                                         <Param id="arc-pitch" label="Arc pitch" value={params.spacingX} min={1.5} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingX')} />
                                         <Param id="ring-pitch" label="Ring pitch" value={params.spacingY} min={1.5} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingY')} />
                                     </div>
-                                    <Param id="rotation" label="Rotation" value={params.rotation} min={0} max={360} step={0.5} unit="°" onChange={set('rotation')} />
                                 </> : <>
                                     <div className="row2">
                                         <Param id="cols" label="Columns" value={params.gridCols} min={2} max={150} step={1} decimals={0} onChange={set('gridCols')} />
@@ -2291,6 +2364,16 @@
                                     {patternType === 'splineGrid' && <p className="hint"><span className="legend" style={{ background: COLORS.splineA }}></span>Drag the amber control points to bend the rows.</p>}
                                 </>}
                                 {patternType !== 'splineGrid' && <div><button className="btn-ghost" onClick={fillBoundary}><Icon name="maximize" size={14} />Fill boundary</button></div>}
+                                <div className="subhead">Pattern transform</div>
+                                <ScaleControl onStart={scaleStart} onScale={scaleBy} onEnd={scaleEnd} />
+                                <label className="check"><input type="checkbox" checked={params.scaleHoles} onChange={e => set('scaleHoles')(e.target.checked)} />Scale hole sizes too</label>
+                                <Param id="rotation" label="Rotation" value={params.rotation} min={-180} max={180} step={0.5} unit="°" onChange={set('rotation')} />
+                                <div className="row2">
+                                    <Param id="pattern-x" label="Offset X" value={params.patternX} min={-300} max={300} step={0.5} unit="mm" typedMax={5000} onChange={set('patternX')} />
+                                    <Param id="pattern-y" label="Offset Y" value={-params.patternY} min={-300} max={300} step={0.5} unit="mm" typedMax={5000} onChange={v => set('patternY')(-v)} />
+                                </div>
+                                <p className="hint"><span className="legend" style={{ background: COLORS.pattern }}></span>Scale changes {patternType === 'splineGrid' ? 'the spline rows' : 'the pitch'}{params.scaleHoles ? ' and hole sizes' : ''} together. On the canvas, drag the violet diamond to move the pattern, the round knob to rotate it (Shift snaps to 15°) and the square knob to scale it.</p>
+                                {(params.rotation || params.patternX || params.patternY) ? <div><button className="btn-ghost" onClick={() => setParams(p => ({ ...p, rotation: 0, patternX: 0, patternY: 0 }))}><Icon name="rotate-ccw" size={14} />Reset position and rotation</button></div> : null}
                             </Section>
 
                             <Section icon="circle-dot" title="Holes" summary={holeSummary} open={openSections.holes} onToggle={toggleSection('holes')}>

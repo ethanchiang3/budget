@@ -669,7 +669,7 @@
 
         const UNITS = [{ value: 'mm', label: 'mm', k: 1 }, { value: 'cm', label: 'cm', k: 10 }, { value: 'in', label: 'inch', k: 25.4 }];
         const UNWRAPS = [{ value: 'top', label: 'Top view' }, { value: 'auto', label: 'Auto' }, { value: 'planar', label: 'Planar' }, { value: 'cylinder', label: 'Cylinder' }, { value: 'conformal', label: 'BFF' }, { value: 'nurbs', label: 'Surface UV' }];
-        const SPLITS = [{ value: 'face', label: 'NURBS faces' }, { value: 'angle', label: 'Crease angle' }];
+        const SPLITS = [{ value: 'face', label: 'CAD faces' }, { value: 'angle', label: 'Crease angle' }];
         const UP_AXES = [{ value: 'z', label: 'Z up' }, { value: 'y', label: 'Y up' }];
         // 上視圖的畫面座標軸：往 -up 看時，畫面右方與上方對應的模型方向
         const viewBasis = (up) => up[1] ? [[1, 0, 0], [0, 0, -1]] : [[1, 0, 0], [0, 1, 0]];
@@ -1738,12 +1738,14 @@
                     }
                     dense.push(...seg);
                 }
-                const pts = dense.map(q => Array.from(P3(q[0], q[1])));
+                // 只取位置（S.eval 的緩衝區還帶著一階導數，存進快取會在寫入頂點時越界）
+                const xyz = (u, v) => { const q = P3(u, v); return [q[0], q[1], q[2]]; };
+                const pts = dense.map(q => xyz(q[0], q[1]));
                 const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + dist3(pts[i], pts[i - 1]));
                 const L = cum[cum.length - 1];
                 const at = (s) => { let lo = 0, hi = cum.length - 1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (cum[mid] <= s) lo = mid; else hi = mid; } const f = cum[hi] > cum[lo] ? (s - cum[lo]) / (cum[hi] - cum[lo]) : 0; return [dense[lo][0] + (dense[hi][0] - dense[lo][0]) * f, dense[lo][1] + (dense[hi][1] - dense[lo][1]) * f]; };
                 // 鄰面已取樣過同一條邊：沿用那些 3D 點，反求到本面的參數，縫合時點位完全相同
-                const at3 = (s) => Array.from(P3(...at(s)));
+                const at3 = (s) => xyz(...at(s));
                 const hit = L > 1e-9 && cache ? cache.find(pts[0], pts[pts.length - 1], at3(L / 2), at3(L / 4), L) : null;
                 if (hit) {
                     const Ps = hit.rev ? hit.P.slice().reverse() : hit.P, uvs = [comp[0]];
@@ -1775,7 +1777,7 @@
                 if (L <= 1e-9) { const last = addB(...comp[comp.length - 1]); if (last !== prev) segs.push(prev, last); continue; }
                 const P3s = [pts[0]];
                 for (let k = 1; k <= n; k++) { const q = k === n ? comp[comp.length - 1] : at(L * k / n), idx = addB(q[0], q[1]); if (idx !== prev) segs.push(prev, idx); prev = idx; P3s.push(k === n ? pts[pts.length - 1] : at3(L * k / n)); }
-                if (cache) cache.add(pts[0], pts[pts.length - 1], at3(L / 2), at3(L / 4), L, P3s);
+                if (cache) cache.add(pts[0], pts[pts.length - 1], at3(L / 2), at3(L / 4), L, P3s, at3(L * 3 / 4));
             }
             const nb = bu.length;
             if (nb < 3) return null;
@@ -1857,12 +1859,12 @@
         };
         const arcAt = (m, t) => { const n = m.ts.length - 1, a = m.ts[0], b = m.ts[n]; const f = clamp((t - a) / ((b - a) || 1) * n, 0, n), i = Math.min(Math.floor(f), n - 1); return m.xs[i] + (m.xs[i + 1] - m.xs[i]) * (f - i); };
 
-        // 已取樣的邊（3D 點）；以中點的空間雜湊查找，端點、中點、四分點與長度都吻合才算同一條邊
+        // 已取樣的邊（3D 點）；以中點的空間雜湊查找，端點、中點、四分點與長度都吻合才算同一條邊（反向時比對四分之三點）
         const edgeCache = (h) => {
             const cell = Math.max(h, 1), map = new Map(), key = (p, dx = 0, dy = 0, dz = 0) => (Math.floor(p[0] / cell) + dx) + ',' + (Math.floor(p[1] / cell) + dy) + ',' + (Math.floor(p[2] / cell) + dz);
             const d3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
             return {
-                add: (A, B, M, Q, L, P) => { const k = key(M); if (!map.has(k)) map.set(k, []); map.get(k).push({ A, B, M, Q, L, P, Q3: P[Math.round((P.length - 1) * 3 / 4)] }); },
+                add: (A, B, M, Q, L, P, Q3) => { const k = key(M); if (!map.has(k)) map.set(k, []); map.get(k).push({ A, B, M, Q, L, P, Q3 }); },
                 find: (A, B, M, Q, L) => {
                     const tol = Math.max(0.05, L * 1e-3);
                     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
@@ -1987,6 +1989,439 @@
             }
             return cur;
         };
+        // ---------- STEP（ISO 10303-21：AP203／AP214／AP242） ----------
+        // 剛體轉換 3×4（欄 = x 軸、y 軸、z 軸、原點）
+        const xfMul = (A, B) => { const o = []; for (let r = 0; r < 3; r++) { for (let c = 0; c < 3; c++) o[r * 4 + c] = A[r * 4] * B[c] + A[r * 4 + 1] * B[4 + c] + A[r * 4 + 2] * B[8 + c]; o[r * 4 + 3] = A[r * 4] * B[3] + A[r * 4 + 1] * B[7] + A[r * 4 + 2] * B[11] + A[r * 4 + 3]; } return o; };
+        const xfInv = (A) => { const o = []; for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) o[r * 4 + c] = A[c * 4 + r]; for (let r = 0; r < 3; r++) o[r * 4 + 3] = -(o[r * 4] * A[3] + o[r * 4 + 1] * A[7] + o[r * 4 + 2] * A[11]); return o; };
+        const xfPt = (M, p) => [M[0] * p[0] + M[1] * p[1] + M[2] * p[2] + M[3], M[4] * p[0] + M[5] * p[1] + M[6] * p[2] + M[7], M[8] * p[0] + M[9] * p[1] + M[10] * p[2] + M[11]];
+        const xfDir = (M, p) => [M[0] * p[0] + M[1] * p[1] + M[2] * p[2], M[4] * p[0] + M[5] * p[1] + M[6] * p[2], M[8] * p[0] + M[9] * p[1] + M[10] * p[2]];
+        const XF_ID = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+        const v3s = { add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], mul: (a, k) => [a[0] * k, a[1] * k, a[2] * k] };
+
+        // 曲線上找最接近 P 的參數：先密集取樣，再在最近的區間內以黃金分割細找
+        const invertCurve = (C, P, a = C.t0, b = C.t1, n = 96) => {
+            const d2 = (t) => { const q = C.at(t); return (q[0] - P[0]) ** 2 + (q[1] - P[1]) ** 2 + (q[2] - P[2]) ** 2; };
+            let bi = 0, bd = Infinity; for (let i = 0; i <= n; i++) { const d = d2(a + (b - a) * i / n); if (d < bd) { bd = d; bi = i; } }
+            let lo = a + (b - a) * Math.max(bi - 1, 0) / n, hi = a + (b - a) * Math.min(bi + 1, n) / n; const g = (Math.sqrt(5) - 1) / 2;
+            let x1 = hi - g * (hi - lo), x2 = lo + g * (hi - lo), f1 = d2(x1), f2 = d2(x2);
+            for (let k = 0; k < 60; k++) { if (f1 < f2) { hi = x2; x2 = x1; f2 = f1; x1 = hi - g * (hi - lo); f1 = d2(x1); } else { lo = x1; x1 = x2; f1 = f2; x2 = lo + g * (hi - lo); f2 = d2(x2); } }
+            return (lo + hi) / 2;
+        };
+        // 曲線一階導數（數值差分）
+        const curveDer = (C, t) => { const h = (C.t1 - C.t0) * 1e-6 || 1e-9, a = C.at(Math.min(t + h, C.t1)), b = C.at(Math.max(t - h, C.t0)), dt = Math.min(t + h, C.t1) - Math.max(t - h, C.t0) || 1; return [(a[0] - b[0]) / dt, (a[1] - b[1]) / dt, (a[2] - b[2]) / dt]; };
+        // 繞單位軸 d（過 o）轉 ang 弧度
+        const rotAbout = (p, o, d, ang) => {
+            const q = v3s.sub(p, o), c = Math.cos(ang), s = Math.sin(ang), k = v3.dot(d, q), cr = v3.cross(d, q);
+            return [o[0] + q[0] * c + cr[0] * s + d[0] * k * (1 - c), o[1] + q[1] * c + cr[1] * s + d[1] * k * (1 - c), o[2] + q[2] * c + cr[2] * s + d[2] * k * (1 - c)];
+        };
+
+        // 解析曲面：u = 繞軸角度（不限範圍，跨接縫時連續），v = 高度（圓柱、圓錐）或角度（球的緯度、環面的管角）
+        // def = { kind, o, x, y, z, a, b, alpha }；旋轉面 def = { kind: 'rev', C, o, d, xr }；擠出面 def = { kind: 'ext', C, D }
+        const paramSurface = (def) => {
+            const S = { kind: def.kind, def, U: [], V: [], periodU: 0, periodV: 0 };
+            if (['cyl', 'cone', 'sphere', 'torus'].includes(def.kind)) {
+                const { kind, o, x, y, z, a, b } = def, ta = Math.tan(def.alpha || 0);
+                S.periodU = 2 * Math.PI; S.periodV = kind === 'torus' ? 2 * Math.PI : 0;
+                S.eval = (u, v, out = new Float64Array(9)) => {
+                    const cu = Math.cos(u), su = Math.sin(u);
+                    let r, h, dr, dh;
+                    if (kind === 'cyl') { r = a; h = v; dr = 0; dh = 1; }
+                    else if (kind === 'cone') { r = a + v * ta; h = v; dr = ta; dh = 1; }
+                    else if (kind === 'sphere') { r = a * Math.cos(v); h = a * Math.sin(v); dr = -a * Math.sin(v); dh = a * Math.cos(v); }
+                    else { r = a + b * Math.cos(v); h = b * Math.sin(v); dr = -b * Math.sin(v); dh = b * Math.cos(v); }
+                    for (let k = 0; k < 3; k++) {
+                        const rad = cu * x[k] + su * y[k], tan = -su * x[k] + cu * y[k];
+                        out[k] = o[k] + r * rad + h * z[k]; out[3 + k] = r * tan; out[6 + k] = dr * rad + dh * z[k];
+                    }
+                    return out;
+                };
+                S.invert = (p) => {
+                    const q = v3s.sub(p, o), X = v3.dot(q, x), Y = v3.dot(q, y), Z = v3.dot(q, z), rho = Math.hypot(X, Y), u = Math.atan2(Y, X);
+                    const v = kind === 'sphere' ? Math.atan2(Z, rho) : kind === 'torus' ? Math.atan2(Z, rho - a) : Z;
+                    const free = kind === 'sphere' ? rho < 1e-9 * (a || 1) : kind === 'cone' ? Math.abs(a + v * ta) < 1e-9 * (Math.abs(a) + 1) : false;
+                    return [u, v, free];
+                };
+                // 參數極限：球的緯度 ±π/2
+                S.vLimits = kind === 'sphere' ? [-Math.PI / 2, Math.PI / 2] : null;
+            } else if (def.kind === 'rev') {
+                const { C, o, d, xr } = def, yr = v3.cross(d, xr);
+                S.periodU = 2 * Math.PI; S.V = Array.from(C.U);
+                S.eval = (u, t, out = new Float64Array(9)) => {
+                    const P = C.at(t), R = rotAbout(P, o, d, u), dc = rotAbout(v3s.add(o, curveDer(C, t)), o, d, u), su = v3.cross(d, v3s.sub(R, o));
+                    out.set(R, 0); out.set(su, 3); out.set(v3s.sub(dc, o), 6); return out;
+                };
+                let guess = null;
+                S.invert = (p) => {
+                    const q = v3s.sub(p, o), h = v3.dot(q, d), rr = v3s.sub(q, v3s.mul(d, h)), rho = Math.hypot(...rr), u = Math.atan2(v3.dot(rr, yr), v3.dot(rr, xr));
+                    const back = rotAbout(p, o, d, -u);
+                    const span = (C.t1 - C.t0) / 24;
+                    let t = guess != null ? invertCurve(C, back, Math.max(C.t0, guess - span), Math.min(C.t1, guess + span), 24) : invertCurve(C, back);
+                    const at = C.at(t); if (Math.hypot(at[0] - back[0], at[1] - back[1], at[2] - back[2]) > 1e-3 * (1 + rho)) t = invertCurve(C, back);
+                    guess = t;
+                    return [u, t, rho < 1e-9];
+                };
+            } else if (def.kind === 'ext') {
+                const { C, D } = def;
+                S.U = Array.from(C.U);
+                S.eval = (s, t, out = new Float64Array(9)) => { const P = C.at(s), dc = curveDer(C, s); out[0] = P[0] + D[0] * t; out[1] = P[1] + D[1] * t; out[2] = P[2] + D[2] * t; out.set(dc, 3); out.set(D, 6); return out; };
+                // 沿擠出方向投影到曲線上：在垂直 D 的平面裡找最近點
+                const flat = { ...C, at: (s) => { const P = C.at(s), k = v3.dot(P, D); return [P[0] - D[0] * k, P[1] - D[1] * k, P[2] - D[2] * k]; } };
+                S.invert = (p) => { const k = v3.dot(p, D), pf = [p[0] - D[0] * k, p[1] - D[1] * k, p[2] - D[2] * k], s = invertCurve(flat, pf); return [s, v3.dot(v3s.sub(p, C.at(s)), D), false]; };
+            }
+            return S;
+        };
+        // 剛體轉換曲面（組合件中的零件位置）
+        const transformSurface = (S, M) => {
+            if (!M || M === XF_ID) return S;
+            let T;
+            if (S.kind === 'nurbs') {
+                const cw = Float64Array.from(S.cw);
+                for (let i = 0; i < cw.length; i += 4) { const w = cw[i + 3], p = xfPt(M, [cw[i] / w, cw[i + 1] / w, cw[i + 2] / w]); cw[i] = p[0] * w; cw[i + 1] = p[1] * w; cw[i + 2] = p[2] * w; }
+                T = nurbsSurface(S.p, S.q, S.U, S.V, S.nu, S.nv, cw, [S.u0, S.u1, S.v0, S.v1]); T.native = S.native;
+            } else {
+                const d = S.def, n = { ...d };
+                if (d.o) n.o = xfPt(M, d.o);
+                for (const k of ['x', 'y', 'z', 'd', 'xr', 'D']) if (d[k]) n[k] = xfDir(M, d[k]);
+                if (d.C) { const cw = Float64Array.from(d.C.cw); for (let i = 0; i < cw.length; i += 4) { const w = cw[i + 3], p = xfPt(M, [cw[i] / w, cw[i + 1] / w, cw[i + 2] / w]); cw[i] = p[0] * w; cw[i + 1] = p[1] * w; cw[i + 2] = p[2] * w; } n.C = nurbsCurve(d.C.p, d.C.U, d.C.n, cw, [d.C.t0, d.C.t1]); }
+                T = paramSurface(n); T.u0 = S.u0; T.u1 = S.u1; T.v0 = S.v0; T.v1 = S.v1; T.vLimits = S.vLimits;
+                if (S.cw) { const cw = Float64Array.from(S.cw); for (let i = 0; i < cw.length; i += 4) { const p = xfPt(M, [cw[i], cw[i + 1], cw[i + 2]]); cw.set(p, i); } T.cw = cw; }
+            }
+            return T;
+        };
+
+        // 邊界（3D 折線，依迴圈方向）→ 參數曲面上的封閉迴圈。角度方向連續展開，不受 2π 限制；
+        // 沒有接縫邊、繞一整圈的邊界（例如只有兩個圓圍成的圓柱面）補上接縫，只有一圈時往極點或頂點封閉
+        const loopsToParam = (S, loops, faceSense) => {
+            const PU = S.periodU, PV = S.periodV, out = [], poles = [];
+            const fix = (q, ref, per) => per && ref != null ? q + per * Math.round((ref - q) / per) : q;
+            for (const L of loops) {
+                if (L.vertex) { poles.push(S.invert(L.vertex)); continue; }
+                const comps = [], flat = []; let prev = null;
+                for (const comp of L.comps) {
+                    const raw = comp.map(P => S.invert(P)), c = [];
+                    for (const [u, v, free] of raw) { const q = [free && prev ? prev[0] : fix(u, prev && prev[0], PU), fix(v, prev && prev[1], PV), free]; c.push(q); if (!free) prev = q; }
+                    // 開頭就是極點：取後面第一個非極點的 u
+                    const firstOk = c.find(q => !q[2]); if (firstOk) for (const q of c) { if (!q[2]) break; q[0] = firstOk[0]; }
+                    comps.push(c.map(q => [q[0], q[1]])); flat.push(...c);
+                }
+                if (!flat.length) continue;
+                const s = flat[0], e = flat[flat.length - 1];
+                // 起點或終點在極點（例如圓錐頂點）時 u 沒有意義，不算繞圈
+                out.push({ comps, wrap: PU && !s[2] && !e[2] ? Math.round((e[0] - s[0]) / PU) : 0, pts3: L.comps.flat() });
+            }
+            if (!out.length) return null;
+            // 把其他迴圈平移到第一個迴圈的角度範圍內（同一個面的孔與外框）
+            const mean = (lp, k) => { let s = 0, n = 0; lp.comps.forEach(c => c.forEach(q => { s += q[k]; n++; })); return s / n; };
+            const shift = (lp, du, dv) => { if (du || dv) lp.comps = lp.comps.map(c => c.map(q => [q[0] + du, q[1] + dv])); };
+            const base = out.find(l => !l.wrap) || out[0], mu = mean(base, 0), mv = mean(base, 1);
+            for (const lp of out) if (lp !== base) shift(lp, PU ? PU * Math.round((mu - mean(lp, 0)) / PU) : 0, PV ? PV * Math.round((mv - mean(lp, 1)) / PV) : 0);
+            const closed = out.filter(l => !l.wrap), wraps = out.filter(l => l.wrap);
+            const result = closed.map(l => l.comps);
+            if (wraps.length) {
+                // 繞圈的鏈：統一成 u 遞增，從共同的接縫角度 w 開始
+                const chains = wraps.map(l => { let pts = l.comps.flat(); if (l.wrap < 0) pts = pts.slice().reverse(); return pts; });
+                const w = chains[0][0][0];
+                const rotateTo = (pts) => {
+                    // 找 u ≡ w 的位置切開並重排，展開成 w → w + 2π
+                    const k0 = (q) => (q[0] - w) / PU, n = pts.length; let cut = -1, f = 0;
+                    for (let i = 0; i + 1 < n; i++) { const a = k0(pts[i]), b = k0(pts[i + 1]); const m = Math.ceil(a - 1e-12); if (b >= m && a < m + 1e-12) { cut = i; f = b > a ? (m - a) / (b - a) : 0; break; } }
+                    if (cut < 0) return pts;
+                    const a = pts[cut], b = pts[cut + 1], c = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+                    const seq = [c, ...pts.slice(cut + 1, n - 1), ...pts.slice(0, cut + 1).map(q => [q[0] + PU, q[1]]), [c[0] + PU, c[1]]];
+                    const off = PU * Math.round((w - c[0]) / PU); return seq.map(q => [q[0] + off, q[1]]);
+                };
+                const A = chains[0], B = chains.length > 1 ? rotateTo(chains[1]) : null;
+                const aEnd = A[A.length - 1], aStart = A[0];
+                if (B) {
+                    const bEnd = B[B.length - 1], bStart = B[0];
+                    result.push([A, [aEnd, [aEnd[0], bEnd[1]]], B.slice().reverse(), [[bStart[0], bStart[1]], aStart]]);
+                } else {
+                    // 單一圈：往頂點（vertex loop）或依面的方向決定往哪個極點封閉
+                    let vp;
+                    if (poles.length) vp = poles[0][1];
+                    else {
+                        const lim = S.vLimits || [Math.min(...A.map(q => q[1])) - 1, Math.max(...A.map(q => q[1])) + 1];
+                        const P3 = wraps[0].pts3, m = Math.floor(P3.length / 2), tdir = v3s.sub(P3[Math.min(m + 1, P3.length - 1)], P3[Math.max(m - 1, 0)]);
+                        const q = A[Math.floor(A.length / 2)], r = S.eval(q[0], q[1]), n = v3.cross([r[3], r[4], r[5]], [r[6], r[7], r[8]]).map(c => c * (faceSense ? 1 : -1));
+                        const inward = v3.cross(n, tdir); // 面在邊界的左側（從法線那一側看）
+                        vp = v3.dot(inward, [r[6], r[7], r[8]]) > 0 ? lim[1] : lim[0];
+                    }
+                    result.push([A, [aEnd, [aEnd[0], vp]], [[aEnd[0], vp], [aStart[0], vp]], [[aStart[0], vp], aStart]]);
+                }
+                for (let k = 2; k < chains.length; k++) result.push([rotateTo(chains[k])]);
+            }
+            // 參數範圍 = 所有迴圈的外框
+            let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+            result.forEach(l => l.forEach(c => c.forEach(q => { u0 = Math.min(u0, q[0]); u1 = Math.max(u1, q[0]); v0 = Math.min(v0, q[1]); v1 = Math.max(v1, q[1]); })));
+            S.u0 = u0; S.u1 = u1; S.v0 = v0; S.v1 = v1;
+            return result;
+        };
+
+        const parseSTEP = (text) => {
+            if (!/ISO-10303-21/.test(text.slice(0, 400))) throw new Error('not a STEP file');
+            const di = text.search(/\bDATA\s*;/); if (di < 0) throw new Error('not a STEP file');
+            const body = text.slice(di).replace(/\/\*[\s\S]*?\*\//g, ' ');
+            // 1) 切出每筆記錄（分號在字串裡不算）
+            const raw = new Map(); let i = body.indexOf(';') + 1;
+            while (i < body.length) {
+                const h = body.indexOf('#', i); if (h < 0) break;
+                const es = body.indexOf('ENDSEC', i); if (es >= 0 && es < h) break;
+                let j = h + 1; while (j < body.length && body.charCodeAt(j) >= 48 && body.charCodeAt(j) <= 57) j++;
+                const eq = body.indexOf('=', j); if (eq < 0) break;
+                let q = eq + 1, inS = false;
+                for (; q < body.length; q++) { const c = body[q]; if (c === "'") inS = !inS; else if (c === ';' && !inS) break; }
+                raw.set(+body.slice(h + 1, j), body.slice(eq + 1, q));
+                i = q + 1;
+            }
+            // 2) 參數解析：數字、字串、#參照、.列舉.、$、*、清單、型別值 NAME(…)
+            const parse = (s) => {
+                let p = 0;
+                const ws = () => { while (p < s.length && s.charCodeAt(p) <= 32) p++; };
+                const ident = () => { const st = p; while (p < s.length && /[A-Za-z0-9_]/.test(s[p])) p++; return s.slice(st, p).toUpperCase(); };
+                const val = () => {
+                    ws(); const c = s[p];
+                    if (c === '(') { p++; const out = []; ws(); if (s[p] === ')') { p++; return out; } for (;;) { out.push(val()); ws(); if (s[p] === ',') { p++; continue; } if (s[p] === ')') { p++; return out; } return out; } }
+                    if (c === "'") { let str = ''; p++; for (;;) { if (p >= s.length) break; if (s[p] === "'") { if (s[p + 1] === "'") { str += "'"; p += 2; continue; } p++; break; } str += s[p++]; } return { s: str }; }
+                    if (c === '#') { p++; const st = p; while (p < s.length && /[0-9]/.test(s[p])) p++; return { r: +s.slice(st, p) }; }
+                    if (c === '.') { p++; const st = p; while (p < s.length && s[p] !== '.') p++; const e = s.slice(st, p); p++; return { e }; }
+                    if (c === '$') { p++; return null; }
+                    if (c === '*') { p++; return '*'; }
+                    if (/[A-Za-z]/.test(c)) { const name = ident(); ws(); const args = s[p] === '(' ? val() : []; return { t: name, a: args }; }
+                    const st = p; while (p < s.length && /[0-9eE+\-.]/.test(s[p])) p++; return parseFloat(s.slice(st, p));
+                };
+                ws();
+                if (s[p] === '(') { p++; const parts = {}; for (;;) { ws(); if (s[p] === ')' || p >= s.length) break; const name = ident(); if (!name) { p++; continue; } ws(); parts[name] = s[p] === '(' ? val() : []; } return { type: 'COMPLEX', parts }; }
+                const type = ident(); ws(); return { type, a: s[p] === '(' ? val() : [] };
+            };
+            const cache = new Map();
+            const ent = (id) => { let e = cache.get(id); if (!e) { const s = raw.get(id); if (s == null) return null; e = parse(s); e.id = id; cache.set(id, e); } return e; };
+            const R = (v) => v && v.r != null ? ent(v.r) : null;
+            const has = (e, name) => e && (e.type === name || (e.type === 'COMPLEX' && e.parts[name]));
+            const part = (e, name) => e.type === name ? e.a : e.parts && e.parts[name];
+            const T = (v) => v && v.e === 'T';
+            // 3) 單位
+            const prefix = { EXA: 1e18, PETA: 1e15, TERA: 1e12, GIGA: 1e9, MEGA: 1e6, KILO: 1e3, HECTO: 100, DECA: 10, DECI: 0.1, CENTI: 0.01, MILLI: 1e-3, MICRO: 1e-6, NANO: 1e-9, PICO: 1e-12 };
+            const unitFactor = (e, kind) => {
+                if (!e) return null;
+                if (e.type === 'COMPLEX' && e.parts.SI_UNIT) { const [pre, name] = e.parts.SI_UNIT; const k = pre && pre.e ? prefix[pre.e] || 1 : 1; return kind === 'L' ? k * 1000 : 1; }
+                if (e.type === 'COMPLEX' && e.parts.CONVERSION_BASED_UNIT) {
+                    const [nm, meas] = e.parts.CONVERSION_BASED_UNIT, m = R(meas), name = (nm && nm.s || '').toUpperCase();
+                    if (kind === 'L') { const known = { INCH: 25.4, FOOT: 304.8, MILLIMETRE: 1, METRE: 1000, YARD: 914.4 }[name]; if (known) return known; }
+                    if (kind === 'A' && /DEG/.test(name)) return Math.PI / 180;
+                    if (m) { const mv = m.type === 'COMPLEX' ? Object.values(m.parts).find(a => a.length >= 2) : m.a; const v = mv && mv[0]; const num = typeof v === 'number' ? v : v && v.a ? v.a[0] : 1; const base = unitFactor(R(mv[1]), kind) || 1; return num * base; }
+                }
+                return null;
+            };
+            // 優先用幾何內容（GLOBAL_UNIT_ASSIGNED_CONTEXT）宣告的單位；英制單位本身也會引用一個公制基準單位，不能拿來用
+            let toMM = 1, ang = 1, unitName = '';
+            const useUnit = (e) => {
+                if (!e || e.type !== 'COMPLEX') return;
+                if (e.parts.LENGTH_UNIT) { const f = unitFactor(e, 'L'); if (f) { toMM = f; unitName = e.parts.CONVERSION_BASED_UNIT ? (e.parts.CONVERSION_BASED_UNIT[0]?.s || '').toUpperCase() : ({ 1: 'MM', 10: 'CM', 1000: 'M' }[+f.toPrecision(6)] || ''); } }
+                if (e.parts.PLANE_ANGLE_UNIT) { const f = unitFactor(e, 'A'); if (f) ang = f; }
+            };
+            let ctx = null;
+            for (const [id, s] of raw) if (s.includes('GLOBAL_UNIT_ASSIGNED_CONTEXT')) { const e = ent(id); if (e.type === 'COMPLEX' && e.parts.GLOBAL_UNIT_ASSIGNED_CONTEXT) { ctx = e; break; } }
+            if (ctx) (ctx.parts.GLOBAL_UNIT_ASSIGNED_CONTEXT[0] || []).forEach(u => useUnit(R(u)));
+            else {
+                // 沒有宣告：取第一個長度單位（英制優先，因為它的基準單位也是長度單位）
+                const cands = []; for (const [id, s] of raw) if (/LENGTH_UNIT|PLANE_ANGLE_UNIT/.test(s)) cands.push(ent(id));
+                cands.sort((a, b) => (b.parts?.CONVERSION_BASED_UNIT ? 1 : 0) - (a.parts?.CONVERSION_BASED_UNIT ? 1 : 0)).reverse().forEach(useUnit);
+            }
+            // 4) 幾何讀取（長度換成 mm）
+            const pt = (v) => { const e = R(v); if (!e) return [0, 0, 0]; if (e.type === 'VERTEX_POINT') return pt(e.a[1]); const c = e.a[1]; return [c[0] * toMM, c[1] * toMM, (c[2] || 0) * toMM]; };
+            const dir = (v) => { const e = R(v); if (!e) return null; const c = e.a[1]; return v3.norm([c[0], c[1], c[2] || 0]); };
+            const place = (v) => {
+                const e = R(v), o = pt(e.a[1]), z = (e.a[2] && dir(e.a[2])) || [0, 0, 1];
+                let x = e.a[3] && dir(e.a[3]); if (!x || Math.abs(v3.dot(x, z)) > 0.999) x = Math.abs(z[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+                const dz = v3.dot(x, z); x = v3.norm([x[0] - dz * z[0], x[1] - dz * z[1], x[2] - dz * z[2]]);
+                return { o, x, y: v3.cross(z, x), z };
+            };
+            const placeXf = (v) => { const A = place(v); return [A.x[0], A.y[0], A.z[0], A.o[0], A.x[1], A.y[1], A.z[1], A.o[1], A.x[2], A.y[2], A.z[2], A.o[2]]; };
+            const lenOf = (v) => (typeof v === 'number' ? v : v && v.a ? v.a[0] : 0) * toMM;
+            const expand = (mults, knots) => { const U = []; mults.forEach((m, i) => { for (let k = 0; k < m; k++) U.push(knots[i]); }); return U; };
+            // 曲線 → NURBS（B-spline、Bézier、圓、橢圓）；直線等其他曲線回傳 null
+            const curveN = (e) => {
+                if (!e) return null;
+                if (has(e, 'SURFACE_CURVE') || has(e, 'SEAM_CURVE') || has(e, 'INTERSECTION_CURVE')) return curveN(R((part(e, 'SURFACE_CURVE') || part(e, 'SEAM_CURVE') || part(e, 'INTERSECTION_CURVE'))[1]));
+                if (has(e, 'TRIMMED_CURVE')) return curveN(R(part(e, 'TRIMMED_CURVE')[1]));
+                let deg, cps, U, W = null;
+                if (e.type === 'B_SPLINE_CURVE_WITH_KNOTS') { const a = e.a; deg = a[1]; cps = a[2]; U = expand(a[6], a[7]); }
+                else if (e.type === 'BEZIER_CURVE') { deg = e.a[1]; cps = e.a[2]; U = [...Array(deg + 1).fill(0), ...Array(deg + 1).fill(1)]; }
+                else if (e.type === 'COMPLEX' && e.parts.B_SPLINE_CURVE) {
+                    const b = e.parts.B_SPLINE_CURVE; deg = b[0]; cps = b[1];
+                    if (e.parts.B_SPLINE_CURVE_WITH_KNOTS) { const k = e.parts.B_SPLINE_CURVE_WITH_KNOTS; U = expand(k[0], k[1]); } else U = [...Array(deg + 1).fill(0), ...Array(deg + 1).fill(1)];
+                    if (e.parts.RATIONAL_B_SPLINE_CURVE) W = e.parts.RATIONAL_B_SPLINE_CURVE[0];
+                } else if (e.type === 'CIRCLE' || e.type === 'ELLIPSE') {
+                    const A = place(e.a[1]), ra = lenOf(e.a[2]), rb = e.type === 'ELLIPSE' ? lenOf(e.a[3]) : ra;
+                    return arcCurve(A.o, A.x.map(c => c * ra), A.y.map(c => c * rb), 0, 2 * Math.PI);
+                } else return null;
+                const P = cps.map(pt), cw = []; P.forEach((p, k) => { const w = W ? W[k] : 1; cw.push(p[0] * w, p[1] * w, p[2] * w, w); });
+                return nurbsCurve(deg, U, P.length, cw);
+            };
+            // 邊：從起點頂點到終點頂點的密集折線（same_sense 為假時沿曲線反向）
+            const edgePts = (edge) => {
+                const P0 = pt(edge.a[1]), P1 = pt(edge.a[2]), same = T(edge.a[4]);
+                let g = R(edge.a[3]);
+                while (g && (has(g, 'SURFACE_CURVE') || has(g, 'SEAM_CURVE') || has(g, 'INTERSECTION_CURVE') || has(g, 'TRIMMED_CURVE'))) g = R((part(g, 'SURFACE_CURVE') || part(g, 'SEAM_CURVE') || part(g, 'INTERSECTION_CURVE') || part(g, 'TRIMMED_CURVE'))[1]);
+                const closedEdge = Math.hypot(P0[0] - P1[0], P0[1] - P1[1], P0[2] - P1[2]) < 1e-7 * (1 + Math.hypot(...P0));
+                if (!g || g.type === 'LINE' || g.type === 'POLYLINE' && g.a[1].length === 2) return [P0, P1];
+                if (g.type === 'POLYLINE') { const ps = g.a[1].map(pt); const d0 = Math.hypot(...v3s.sub(ps[0], P0)), d1 = Math.hypot(...v3s.sub(ps[ps.length - 1], P0)); return d1 < d0 ? ps.reverse() : ps; }
+                if (g.type === 'CIRCLE' || g.type === 'ELLIPSE') {
+                    const A = place(g.a[1]), ra = lenOf(g.a[2]), rb = g.type === 'ELLIPSE' ? lenOf(g.a[3]) : ra;
+                    const angOf = (p) => { const q = v3s.sub(p, A.o); return Math.atan2(v3.dot(q, A.y) / rb, v3.dot(q, A.x) / ra); };
+                    const a0 = angOf(P0); let a1 = angOf(P1);
+                    if (same) { while (a1 <= a0 + 1e-9) a1 += 2 * Math.PI; if (closedEdge) a1 = a0 + 2 * Math.PI; }
+                    else { while (a1 >= a0 - 1e-9) a1 -= 2 * Math.PI; if (closedEdge) a1 = a0 - 2 * Math.PI; }
+                    const n = Math.max(8, Math.ceil(Math.abs(a1 - a0) / (Math.PI / 90)));
+                    return Array.from({ length: n + 1 }, (_, k) => { const t = a0 + (a1 - a0) * k / n; return k === 0 ? P0 : k === n ? P1 : [0, 1, 2].map(c => A.o[c] + ra * Math.cos(t) * A.x[c] + rb * Math.sin(t) * A.y[c]); });
+                }
+                const C = curveN(g); if (!C) { skip(g.type); return [P0, P1]; }
+                let t0 = invertCurve(C, P0), t1 = invertCurve(C, P1);
+                const pts = C.sample(), ts = []; { const U = C.U, p = C.p, kk = p <= 1 ? 1 : 16 * p; const kn = [C.t0]; for (let q = 0; q < U.length; q++) if (U[q] > kn[kn.length - 1] + 1e-12 && U[q] < C.t1 - 1e-12) kn.push(U[q]); kn.push(C.t1); for (let q = 0; q + 1 < kn.length; q++) for (let r2 = 0; r2 < kk; r2++) ts.push(kn[q] + (kn[q + 1] - kn[q]) * r2 / kk); ts.push(C.t1); }
+                if (closedEdge) { t0 = same ? C.t0 : C.t1; t1 = same ? C.t1 : C.t0; }
+                const seg = (a, b) => { const out = []; if (a <= b) { out.push(C.at(a)); ts.forEach(t => { if (t > a && t < b) out.push(C.at(t)); }); out.push(C.at(b)); } else { out.push(C.at(a)); for (let q = ts.length - 1; q >= 0; q--) if (ts[q] < a && ts[q] > b) out.push(C.at(ts[q])); out.push(C.at(b)); } return out; };
+                let out;
+                if (same && t1 < t0 - 1e-12) out = [...seg(t0, C.t1), ...seg(C.t0, t1).slice(1)];   // 閉合曲線跨過起點
+                else if (!same && t1 > t0 + 1e-12) out = [...seg(t0, C.t0), ...seg(C.t1, t1).slice(1)];
+                else out = seg(t0, t1);
+                out[0] = P0; out[out.length - 1] = P1;
+                return out;
+            };
+            const skipped = {}; const skip = (name) => { skipped[name] = (skipped[name] || 0) + 1; };
+            // 面的邊界迴圈（3D）
+            const faceLoops = (face) => face.a[1].map(bv => {
+                const b = R(bv), lp = R(b.a[1]), ori = T(b.a[2]);
+                if (lp.type === 'VERTEX_LOOP') return { vertex: pt(lp.a[1]) };
+                if (lp.type === 'POLY_LOOP') { const ps = lp.a[1].map(pt); let comps = ps.map((p, k) => [p, ps[(k + 1) % ps.length]]); if (!ori) comps = comps.reverse().map(c => c.slice().reverse()); return { comps }; }
+                let comps = lp.a[1].map(oev => { const oe = R(oev), pts = edgePts(R(oe.a[3])); return T(oe.a[4]) ? pts : pts.slice().reverse(); });
+                if (!ori) comps = comps.reverse().map(c => c.slice().reverse());
+                return { comps };
+            });
+            // 5) 曲面
+            const surfaceOf = (e, loops) => {
+                if (has(e, 'RECTANGULAR_TRIMMED_SURFACE')) return surfaceOf(R(part(e, 'RECTANGULAR_TRIMMED_SURFACE')[1]), loops);
+                const t = e.type;
+                if (t === 'PLANE') return { plane: true, A: place(e.a[1]) };
+                if (t === 'CYLINDRICAL_SURFACE') { const A = place(e.a[1]); return paramSurface({ kind: 'cyl', ...A, a: lenOf(e.a[2]) }); }
+                if (t === 'CONICAL_SURFACE') { const A = place(e.a[1]); return paramSurface({ kind: 'cone', ...A, a: lenOf(e.a[2]), alpha: (typeof e.a[3] === 'number' ? e.a[3] : e.a[3].a[0]) * ang }); }
+                if (t === 'SPHERICAL_SURFACE') { const A = place(e.a[1]); return paramSurface({ kind: 'sphere', ...A, a: lenOf(e.a[2]) }); }
+                if (t === 'TOROIDAL_SURFACE' || t === 'DEGENERATE_TOROIDAL_SURFACE') { const A = place(e.a[1]); return paramSurface({ kind: 'torus', ...A, a: lenOf(e.a[2]), b: lenOf(e.a[3]) }); }
+                if (t === 'SURFACE_OF_REVOLUTION' || t === 'SURFACE_OF_LINEAR_EXTRUSION') {
+                    const ce = R(e.a[1]); let C = curveN(ce);
+                    if (!C && ce && ce.type === 'LINE') {
+                        // 無限長直線：依邊界點在直線上的投影決定範圍
+                        const p0 = pt(ce.a[1]), vv = R(ce.a[2]), d = dir(vv.a[1]); let lo = Infinity, hi = -Infinity;
+                        loops.forEach(l => (l.comps || []).forEach(c => c.forEach(p => { const k = v3.dot(v3s.sub(p, p0), d); lo = Math.min(lo, k); hi = Math.max(hi, k); })));
+                        if (!(hi > lo)) return null;
+                        const m = (hi - lo) * 0.01 + 1e-6; C = nurbsCurve(1, [0, 0, 1, 1], 2, [...v3s.add(p0, v3s.mul(d, lo - m)), 1, ...v3s.add(p0, v3s.mul(d, hi + m)), 1]);
+                    }
+                    if (!C) { skip(ce ? ce.type : '?'); return null; }
+                    if (t === 'SURFACE_OF_REVOLUTION') {
+                        const ax = R(e.a[2]), o = pt(ax.a[1]), d = (ax.a[2] && dir(ax.a[2])) || [0, 0, 1];
+                        const mid = C.at((C.t0 + C.t1) / 2), q = v3s.sub(mid, o), h = v3.dot(q, d); let xr = v3s.sub(q, v3s.mul(d, h));
+                        if (Math.hypot(...xr) < 1e-9) { const c0 = v3s.sub(C.at(C.t0), o); xr = v3s.sub(c0, v3s.mul(d, v3.dot(c0, d))); }
+                        return paramSurface({ kind: 'rev', C, o, d, xr: v3.norm(xr) });
+                    }
+                    const vec = R(e.a[2]); return paramSurface({ kind: 'ext', C, D: dir(vec.a[1]) });
+                }
+                let deg, cps, U, V, W = null;
+                if (t === 'B_SPLINE_SURFACE_WITH_KNOTS') { const a = e.a; cps = a[3]; U = expand(a[8], a[10]); V = expand(a[9], a[11]); deg = [a[1], a[2]]; }
+                else if (t === 'BEZIER_SURFACE') { const a = e.a; cps = a[3]; deg = [a[1], a[2]]; U = [...Array(a[1] + 1).fill(0), ...Array(a[1] + 1).fill(1)]; V = [...Array(a[2] + 1).fill(0), ...Array(a[2] + 1).fill(1)]; }
+                else if (t === 'COMPLEX' && e.parts.B_SPLINE_SURFACE) {
+                    const b = e.parts.B_SPLINE_SURFACE; deg = [b[0], b[1]]; cps = b[2];
+                    const k = e.parts.B_SPLINE_SURFACE_WITH_KNOTS;
+                    if (k) { U = expand(k[0], k[2]); V = expand(k[1], k[3]); } else { U = [...Array(deg[0] + 1).fill(0), ...Array(deg[0] + 1).fill(1)]; V = [...Array(deg[1] + 1).fill(0), ...Array(deg[1] + 1).fill(1)]; }
+                    if (e.parts.RATIONAL_B_SPLINE_SURFACE) W = e.parts.RATIONAL_B_SPLINE_SURFACE[0];
+                } else { skip(t === 'COMPLEX' ? Object.keys(e.parts).join('+') : t); return null; }
+                const nu = cps.length, nv = cps[0].length, cw = new Float64Array(nu * nv * 4);
+                for (let a = 0; a < nu; a++) for (let b = 0; b < nv; b++) { const p = pt(cps[a][b]), w = W ? W[a][b] : 1; cw.set([p[0] * w, p[1] * w, p[2] * w, w], (b * nu + a) * 4); }
+                return nurbsSurface(deg[0], deg[1], U, V, nu, nv, cw);
+            };
+            // 一個面 → { S, loops（參數空間） }
+            const buildFace = (face) => {
+                const loops = faceLoops(face), se = R(face.a[2]); if (!se) return null;
+                const S = surfaceOf(se, loops); if (!S) return null;
+                const edgeLoops = loops.filter(l => l.comps);
+                if (S.plane) {
+                    const { o, x, y } = S.A, pr = (p) => { const q = v3s.sub(p, o); return [v3.dot(q, x), v3.dot(q, y)]; };
+                    const all = edgeLoops.flatMap(l => l.comps.flat()); if (!all.length) return null;
+                    const st = all.map(pr), s0 = Math.min(...st.map(p => p[0])), s1 = Math.max(...st.map(p => p[0])), t0 = Math.min(...st.map(p => p[1])), t1 = Math.max(...st.map(p => p[1]));
+                    const ws = s1 - s0 || 1, ht = t1 - t0 || 1, O = [0, 1, 2].map(k => o[k] + x[k] * s0 + y[k] * t0);
+                    return { S: planeSurface(O, x.map(c => c * ws), y.map(c => c * ht)), loops: edgeLoops.map(l => l.comps.map(c => c.map(p => { const q = pr(p); return [(q[0] - s0) / ws, (q[1] - t0) / ht]; }))) };
+                }
+                if (S.kind === 'nurbs') {
+                    if (!edgeLoops.length) return { S, loops: [domainLoop(S)] };
+                    return { S, loops: edgeLoops.map(l => { let prev = null; return l.comps.map(c => { const r = invertPolyline(S, c, prev); prev = r.uv[r.uv.length - 1]; return r.uv; }); }) };
+                }
+                // 解析、旋轉、擠出面
+                S.cw = Float64Array.from(loops.flatMap(l => (l.comps ? l.comps.flat() : [l.vertex])).flatMap(p => [p[0], p[1], p[2], 1]));
+                if (!edgeLoops.length && S.vLimits) {
+                    // 沒有邊的整顆球：整個參數範圍
+                    S.u0 = 0; S.u1 = 2 * Math.PI; S.v0 = S.vLimits[0]; S.v1 = S.vLimits[1];
+                    const r = new Float64Array(9), cw = []; for (let a = 0; a <= 8; a++) for (let b = 0; b <= 8; b++) { S.eval(a / 8 * 2 * Math.PI, S.v0 + (S.v1 - S.v0) * b / 8, r); cw.push(r[0], r[1], r[2], 1); } S.cw = Float64Array.from(cw);
+                    return { S, loops: [domainLoop(S)] };
+                }
+                const uv = loopsToParam(S, loops, T(face.a[3]));
+                return uv ? { S, loops: uv } : null;
+            };
+            // 6) 組合件：每個表示（representation）在世界座標的位置（可能有多個實例）
+            const parents = new Map(), links = new Map();
+            const addP = (child, parent, M) => { if (!parents.has(child)) parents.set(child, []); parents.get(child).push({ parent, M }); };
+            const addL = (a, b) => { for (const [x, y] of [[a, b], [b, a]]) { if (!links.has(x)) links.set(x, []); links.get(x).push(y); } };
+            const reps = [];
+            for (const [id, s] of raw) {
+                if (/REPRESENTATION_RELATIONSHIP|MAPPED_ITEM|_REPRESENTATION\s*\(/.test(s) || /^\s*SHAPE_REPRESENTATION/.test(s)) {
+                    const e = ent(id);
+                    if (e.type === 'COMPLEX' && e.parts.REPRESENTATION_RELATIONSHIP) {
+                        const [, , r1, r2] = e.parts.REPRESENTATION_RELATIONSHIP, tr = e.parts.REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION;
+                        const it = tr && R(tr[0]);
+                        if (it && it.type === 'ITEM_DEFINED_TRANSFORMATION') addP(r1.r, r2.r, xfMul(placeXf(it.a[3]), xfInv(placeXf(it.a[2]))));
+                        else addL(r1.r, r2.r);
+                    } else if (e.type === 'SHAPE_REPRESENTATION_RELATIONSHIP' || e.type === 'REPRESENTATION_RELATIONSHIP') addL(e.a[2].r, e.a[3].r);
+                    else if (/REPRESENTATION$/.test(e.type) && Array.isArray(e.a[1])) reps.push(e);
+                }
+            }
+            // MAPPED_ITEM：表示中的項目引用另一個表示，帶一個放置
+            for (const rep of reps) for (const itv of rep.a[1]) { const it = R(itv); if (it && it.type === 'MAPPED_ITEM') { const map = R(it.a[1]); if (map) addP(map.a[1].r, rep.id, xfMul(placeXf(it.a[2]), xfInv(placeXf(map.a[0])))); } }
+            const worldMemo = new Map();
+            const worlds = (rep, seen = new Set()) => {
+                if (worldMemo.has(rep)) return worldMemo.get(rep);
+                if (seen.has(rep)) return [];
+                seen.add(rep);
+                let out = [];
+                for (const { parent, M } of parents.get(rep) || []) for (const W of worlds(parent, seen)) out.push(xfMul(W, M));
+                for (const q of links.get(rep) || []) out.push(...worlds(q, seen));
+                seen.delete(rep);
+                if (!out.length && !(parents.get(rep) || []).length) out = [XF_ID];
+                const uniq = []; for (const M of out) if (!uniq.some(N => N.every((x, k) => Math.abs(x - M[k]) < 1e-9))) uniq.push(M);
+                worldMemo.set(rep, uniq);
+                return uniq;
+            };
+            // 每個面屬於哪些表示
+            const faceRep = new Map();
+            const collect = (v, rep, depth = 0) => {
+                const e = R(v); if (!e || depth > 6) return;
+                if (e.type === 'ADVANCED_FACE' || e.type === 'FACE_SURFACE') { if (!faceRep.has(e.id)) faceRep.set(e.id, new Set()); faceRep.get(e.id).add(rep); return; }
+                if (e.type === 'MANIFOLD_SOLID_BREP' || e.type === 'FACETED_BREP') collect(e.a[1], rep, depth + 1);
+                else if (e.type === 'BREP_WITH_VOIDS') { collect(e.a[1], rep, depth + 1); (e.a[2] || []).forEach(x => collect(x, rep, depth + 1)); }
+                else if (e.type === 'SHELL_BASED_SURFACE_MODEL') e.a[1].forEach(x => collect(x, rep, depth + 1));
+                else if (e.type === 'CLOSED_SHELL' || e.type === 'OPEN_SHELL') e.a[1].forEach(x => collect(x, rep, depth + 1));
+                else if (e.type === 'ORIENTED_CLOSED_SHELL' || e.type === 'ORIENTED_OPEN_SHELL') collect(e.a[2], rep, depth + 1);
+            };
+            for (const rep of reps) for (const itv of rep.a[1]) collect(itv, rep.id);
+            // 7) 建立所有面（每個實例一份）
+            const faces = [];
+            for (const [id, s] of raw) {
+                if (!/^\s*(ADVANCED_FACE|FACE_SURFACE)\s*\(/.test(s)) continue;
+                let F; try { F = buildFace(ent(id)); } catch (err) { F = null; }
+                if (!F) { skip('face'); continue; }
+                const xs = faceRep.has(id) ? [...faceRep.get(id)].flatMap(r => worlds(r)) : [XF_ID];
+                const uniq = []; for (const M of xs) if (!uniq.some(N => N.every((x, k) => Math.abs(x - M[k]) < 1e-9))) uniq.push(M);
+                for (const M of uniq) faces.push(M === XF_ID ? F : { S: transformSurface(F.S, M), loops: F.loops });
+            }
+            delete skipped.face; const failed = Object.values(skipped).length ? undefined : 0;
+            return { faces, skipped, toMM, unitName, instances: faces.length };
+        };
         const SAMPLES = NURBS_SAMPLES;
         const SAMPLE_NAMES = new Set(Object.values(SAMPLES).map(smp => smp.name));
 
@@ -2070,7 +2505,7 @@
             ctx.closePath();
         };
 
-        // 3D 檢視：three.js 場景與軌道相機；點選曲面；穿孔以 alpha 貼圖鏤空，可透視
+        // 3D 檢視：three.js 場景與軌道相機；點選曲面；穿孔以較深的同材質顯示（不鏤空）
         const Viewport3D = ({ model, labels, selectedIds, splitGeom, showMesh, upAxis, patch, dots, holeShape, holeCorner, finishKey, finish, guides, bg, onPick, apiRef }) => {
             const glRef = useRef(null);
             const tipRef = useRef(null);
@@ -2106,11 +2541,11 @@
                     const root = new THREE.Group(); scene.add(root); // Z 朝上的模型在 three.js 中轉成 Y 朝上
                     Object.assign(s, {
                         THREE, renderer, scene, camera, root, ray: new THREE.Raycaster(),
-                        // 外側用材質色、內側（背面）壓暗，透過孔看到的內部才會是暗的；也能容忍法線翻轉的 STL
+                        // 外側用材質色、內側（背面）壓暗；也能容忍法線翻轉的 STL
                         bodyMat: new THREE.MeshStandardMaterial({ side: THREE.FrontSide }),
                         bodyBack: new THREE.MeshStandardMaterial({ side: THREE.BackSide }),
-                        patchMat: new THREE.MeshStandardMaterial({ side: THREE.FrontSide, alphaTest: 0.5 }),
-                        patchBack: new THREE.MeshStandardMaterial({ side: THREE.BackSide, alphaTest: 0.5 }),
+                        patchMat: new THREE.MeshStandardMaterial({ side: THREE.FrontSide }),
+                        patchBack: new THREE.MeshStandardMaterial({ side: THREE.BackSide }),
                         lineMat: new THREE.LineBasicMaterial({ color: COLORS.boundary }),
                         // 分割線（曲面之間的邊）與網格線
                         splitMat: new THREE.LineBasicMaterial({ color: 0x86867f, transparent: true, opacity: 0.9 }),
@@ -2290,7 +2725,7 @@
                 s.render();
             }, [status, model, patch]);
 
-            // 穿孔貼圖：在展開座標上畫孔（黑 = 鏤空），拖動滑桿時每個畫格最多重畫一次
+            // 穿孔貼圖：在展開座標上畫孔，作為顏色貼圖與材質色相乘（白 = 原色，孔 = 約三成亮度的同一種材質）；拖動滑桿時每個畫格最多重畫一次
             useEffect(() => {
                 if (status !== 'ready' || !patch) return;
                 const s = st.current; const { THREE, renderer } = s;
@@ -2302,12 +2737,12 @@
                     const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(W * k)); cv.height = Math.max(1, Math.round(H * k));
                     const ctx = cv.getContext('2d');
                     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
-                    ctx.fillStyle = '#000'; ctx.beginPath();
+                    ctx.fillStyle = '#595959'; ctx.beginPath();
                     dots.forEach(d => traceHolePath(ctx, d, x => (x - b.minX) * k, y => (y - b.minY) * k, k, holeShape, holeCorner));
                     ctx.fill();
-                    const tex = new THREE.CanvasTexture(cv); tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+                    const tex = new THREE.CanvasTexture(cv); tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); tex.encoding = THREE.sRGBEncoding;
                     s.tex?.dispose(); s.tex = tex;
-                    for (const m of [s.patchMat, s.patchBack]) { m.alphaMap = tex; m.needsUpdate = true; }
+                    for (const m of [s.patchMat, s.patchBack]) { m.map = tex; m.needsUpdate = true; }
                     s.render();
                 });
             }, [status, patch, dots, holeShape, holeCorner]);
@@ -3247,13 +3682,15 @@
             const handleModelFile = (e) => {
                 const file = e.target.files[0]; e.target.value = '';
                 if (!file) return;
-                if (/\.(igs|iges)$/i.test(file.name)) {
+                const isStep = /\.(step|stp|p21)$/i.test(file.name);
+                if (isStep || /\.(igs|iges)$/i.test(file.name)) {
+                    const fmtName = isStep ? 'STEP' : 'IGES';
                     Promise.all([file.text(), loadDelaunator()]).then(([text]) => {
-                        let res; try { res = parseIGES(text); } catch (err) { throw new Error('unreadable'); }
+                        let res; try { res = isStep ? parseSTEP(text) : parseIGES(text); } catch (err) { throw new Error('unreadable'); }
                         if (!res.faces.length) throw new Error(Object.keys(res.skipped).length ? `types ${Object.keys(res.skipped).join(', ')}` : 'empty');
-                        loadSource({ kind: 'nurbs', faces: res.faces, name: file.name, skipped: res.skipped, units: res.unitName });
-                        notify(`Loaded ${file.name} · ${res.faces.length} NURBS face${res.faces.length > 1 ? 's' : ''} · click one to perforate it`);
-                    }).catch(err => notify(err.message === 'unreadable' ? `${file.name} isn't a readable IGES file` : err.message.startsWith('types') ? `${file.name} has no surfaces this tool can read (IGES entity ${err.message}). Export trimmed NURBS surfaces (type 128/144).` : err.message === 'empty' ? `${file.name} contains no surfaces` : 'The triangulation library couldn’t load. Check your connection and try again.'));
+                        loadSource({ kind: 'nurbs', format: fmtName, faces: res.faces, name: file.name, skipped: res.skipped, units: res.unitName });
+                        notify(`Loaded ${file.name} · ${res.faces.length} face${res.faces.length > 1 ? 's' : ''} · click one to perforate it`);
+                    }).catch(err => notify(err.message === 'unreadable' ? `${file.name} isn't a readable ${fmtName} file` : err.message.startsWith('types') ? (isStep ? `${file.name} has no solid or surface faces this tool can read (${err.message.slice(6)}). Export the part as a solid or surface body.` : `${file.name} has no surfaces this tool can read (IGES entity ${err.message}). Export trimmed NURBS surfaces (type 128/144).`) : err.message === 'empty' ? `${file.name} contains no surfaces${isStep ? '; it may hold only a mesh or wireframe' : ''}` : 'The triangulation library couldn’t load. Check your connection and try again.'));
                     return;
                 }
                 file.arrayBuffer().then(buf => {
@@ -3261,7 +3698,7 @@
                     if (tri.length / 9 > 1500000) throw new Error('too big');
                     loadSource({ kind: 'mesh', tri, name: file.name });
                     notify(`Loaded ${file.name} · click a surface to apply the pattern`);
-                }).catch(err => notify(err.message === 'too big' ? `${file.name} has more than 1.5 million triangles; simplify it first` : `${file.name} isn't a readable STL or IGES file`));
+                }).catch(err => notify(err.message === 'too big' ? `${file.name} has more than 1.5 million triangles; simplify it first` : `${file.name} isn't a readable STL file. Open STL, STEP or IGES files.`));
             };
 
             // 點選曲面：一般點選 = 只選這一面；Shift = 加入或移除
@@ -3462,18 +3899,18 @@
                 : uvPatch.why === 'closed' ? 'This selection is a closed surface, so it can’t be flattened in one piece and was projected flat instead. Select fewer faces, lower the split angle, or use Top view.'
                 : uvPatch.why === 'size' ? 'BFF handles up to 60,000 vertices, so this surface was projected flat. Raise Max edge in step 1, or select a smaller surface.'
                 : uvPatch.fallback ? 'BFF couldn’t flatten this surface cleanly, so it was projected flat instead. Try splitting it into smaller surfaces.'
-                : unwrapMode === 'nurbs' && uvPatch.method !== 'nurbs' ? 'Surface UV follows the isocurves of one NURBS face. This selection spans several faces, so Auto was used instead.'
+                : unwrapMode === 'nurbs' && uvPatch.method !== 'nurbs' ? 'Surface UV follows the isocurves of one CAD face. This selection spans several faces, so Auto was used instead.'
                 : uvPatch.solver === 'lscm' ? 'This surface has more than one edge loop, so it was flattened with LSCM instead of BFF.'
                 : uvPatch.projected && slopeStretch > 40 ? 'Holes on the steep parts stretch along the slope. Lower Max slope to keep them round, or use BFF.'
                 : areaWarp > 0.1 ? 'Holes will look distorted on the part. Try another unwrap or a smaller surface.' : null;
-            const UNWRAP_HINTS = { top: 'Rows are laid out in plan view and each hole drops straight down onto the part.', auto: 'Picks Top view, Planar, Cylinder or BFF to suit each selection.', planar: 'Projects onto the surface’s best-fit plane.', cylinder: 'Unrolls around the fitted cylinder axis; true cylinders keep their size.', conformal: 'Boundary First Flattening keeps hole shapes and edge lengths and spreads any area change.', nurbs: 'Lays rows along the NURBS face’s own u and v isocurves, spaced by true length, the way Grasshopper maps onto a surface.' };
+            const UNWRAP_HINTS = { top: 'Rows are laid out in plan view and each hole drops straight down onto the part.', auto: 'Picks Top view, Planar, Cylinder or BFF to suit each selection.', planar: 'Projects onto the surface’s best-fit plane.', cylinder: 'Unrolls around the fitted cylinder axis; true cylinders keep their size.', conformal: 'Boundary First Flattening keeps hole shapes and edge lengths and spreads any area change.', nurbs: 'Lays rows along the face’s own u and v isocurves, spaced by true length, the way Grasshopper maps onto a surface. Cylinders and cones unroll exactly.' };
             const selArea = labels ? [...selectedIds].reduce((a, id) => a + labels.area[id], 0) : 0;
             const nSurf = labels ? labels.area.length : 0;
             const unwrapOptions = isNurbs ? UNWRAPS : UNWRAPS.filter(u => u.value !== 'nurbs');
             const srcTris = modelSrc?.kind === 'mesh' ? modelSrc.tri.length / 9 : 0;
             // 網格化滑桿的範圍依模型大小
             const tessScale = useMemo(() => modelSrc ? +(sourceDiag(modelSrc) * unitK).toPrecision(2) : 100, [modelSrc, unitK]);
-            const skippedText = modelSrc?.skipped && Object.keys(modelSrc.skipped).length ? Object.entries(modelSrc.skipped).map(([k, n]) => `${n} × type ${k}`).join(', ') : '';
+            const skippedText = modelSrc?.skipped && Object.keys(modelSrc.skipped).length ? Object.entries(modelSrc.skipped).map(([k, n]) => `${n} × ${/^\d+$/.test(k) ? `type ${k}` : k.toLowerCase().replace(/_/g, ' ')}`).join(', ') : '';
             const wsColor = useMemo(() => getComputedStyle(document.documentElement).getPropertyValue('--ws').trim() || '#e5e5e1', [themeTick]);
 
             const dfmText = issueCount === 0
@@ -3517,17 +3954,17 @@
                     <div className="main">
                         <aside className="panel">
                             {mode3D && <>
-                            <Section icon="box" title="Model" summary={model ? (isNurbs ? `${modelSrc.faces.length} NURBS face${modelSrc.faces.length > 1 ? 's' : ''}` : 'STL mesh') : ''} open={openSections.model} onToggle={toggleSection('model')}>
+                            <Section icon="box" title="Model" summary={model ? (isNurbs ? `${modelSrc.format || 'NURBS'} · ${modelSrc.faces.length} face${modelSrc.faces.length > 1 ? 's' : ''}` : 'STL mesh') : ''} open={openSections.model} onToggle={toggleSection('model')}>
                                 <div className="btn-row">
-                                    <button className="btn-ghost strong" onClick={() => stlInputRef.current.click()}><Icon name="upload" size={14} />{model && !SAMPLE_NAMES.has(model.name) ? 'Open another…' : 'Open STL or IGES…'}</button>
+                                    <button className="btn-ghost strong" onClick={() => stlInputRef.current.click()}><Icon name="upload" size={14} />{model && !SAMPLE_NAMES.has(model.name) ? 'Open another…' : 'Open STEP, IGES or STL…'}</button>
                                 </div>
                                 <div className="samples">Samples
                                     {Object.entries(SAMPLES).map(([k, smp]) => <button key={k} className={`chip ${model?.name === smp.name ? 'on' : ''}`} title={`Load the ${smp.name.toLowerCase()} sample`} onClick={() => loadSample(k)}>{smp.short}</button>)}
                                 </div>
-                                <input ref={stlInputRef} type="file" hidden accept=".stl,.igs,.iges" onChange={handleModelFile} />
-                                {model && <p className="meta" title={model.name}><b>{model.name}</b> · {fmt(model.bbox[3] - model.bbox[0], 1)} × {fmt(model.bbox[4] - model.bbox[1], 1)} × {fmt(model.bbox[5] - model.bbox[2], 1)} mm · {isNurbs ? `${modelSrc.faces.length} NURBS face${modelSrc.faces.length > 1 ? 's' : ''}${modelSrc.units ? `, ${modelSrc.units}` : ''}` : `STL, ${srcTris.toLocaleString()} triangles`}</p>}
+                                <input ref={stlInputRef} type="file" hidden accept=".stl,.step,.stp,.igs,.iges" onChange={handleModelFile} />
+                                {model && <p className="meta" title={model.name}><b>{model.name}</b> · {fmt(model.bbox[3] - model.bbox[0], 1)} × {fmt(model.bbox[4] - model.bbox[1], 1)} × {fmt(model.bbox[5] - model.bbox[2], 1)} mm · {isNurbs ? `${modelSrc.format ? `${modelSrc.format}, ` : ''}${modelSrc.faces.length} face${modelSrc.faces.length > 1 ? 's' : ''}${modelSrc.units ? `, ${modelSrc.units.toLowerCase()}` : ''}` : `STL, ${srcTris.toLocaleString()} triangles`}</p>}
                                 {skippedText && <p className="note"><Icon name="info" size={13} />Skipped entities this tool can’t read: {skippedText}.</p>}
-                                <p className="hint">IGES (.igs) keeps the exact NURBS surfaces, so they can be re-tessellated at any density. In Rhino use Export Selected → IGES.</p>
+                                <p className="hint">STEP and IGES keep the exact surfaces (NURBS, planes, cylinders, fillets), so they can be re-tessellated at any density; assemblies keep their part positions. In Rhino use Export Selected → STEP.</p>
                                 <div className="row2">
                                     <div className="param"><span className="param-label">Units</span><Segmented label="Units" inline tight options={UNITS} value={unit} onChange={changeUnit} /></div>
                                     <div className="param"><span className="param-label">Up axis</span><Segmented label="Up axis" inline tight options={UP_AXES} value={upAxis} onChange={setUpAxis} /></div>
@@ -3540,11 +3977,11 @@
                                         <Param id="tess-edge" label="Max edge" value={tess.edge} min={+(tessScale / 400).toPrecision(1)} max={+(tessScale / 8).toPrecision(2)} step={+(tessScale / 2000).toPrecision(1)} decimals={2} unit="mm" typedMax={tessScale} onChange={v => setTess(t => ({ ...t, edge: v }))} />
                                         <Param id="tess-tol" label="Tolerance" value={tess.tol} min={0.001} max={+(tessScale / 100).toPrecision(1)} step={0.001} decimals={3} unit="mm" typedMax={tessScale / 10} onChange={v => setTess(t => ({ ...t, tol: v }))} />
                                     </div>
-                                    <p className="hint">Each face is re-meshed from its exact NURBS surface: no edge longer than Max edge, and no point farther than Tolerance from the true surface. Shared edges are sampled once, so neighbouring faces stay stitched.</p>
+                                    <p className="hint">Each face is re-meshed from its exact surface: no edge longer than Max edge, and no point farther than Tolerance from the true surface. Shared edges are sampled once, so neighbouring faces stay stitched.</p>
                                 </> : <>
                                     <label className="check"><input type="checkbox" checked={tess.refine} onChange={e => setTess(t => ({ ...t, refine: e.target.checked }))} />Refine: split edges longer than Max edge</label>
                                     {tess.refine && <Param id="tess-edge" label="Max edge" value={tess.edge} min={+(tessScale / 400).toPrecision(1)} max={+(tessScale / 8).toPrecision(2)} step={+(tessScale / 2000).toPrecision(1)} decimals={2} unit="mm" typedMax={tessScale} onChange={v => setTess(t => ({ ...t, edge: v }))} />}
-                                    <p className="hint">An STL is already a mesh, so it can only be refined: long edges are split, which smooths BFF and Cylinder unwraps, but the facets stay flat. Import IGES to re-tessellate from the true surface.</p>
+                                    <p className="hint">An STL is already a mesh, so it can only be refined: long edges are split, which smooths BFF and Cylinder unwraps, but the facets stay flat. Open STEP or IGES to re-tessellate from the true surface.</p>
                                 </>)}
                                 {model && <dl className="facts">
                                     <div><dt>Mesh</dt><dd>{model.T.toLocaleString()} triangles{isNurbs ? ` · ${modelSrc.faces.length} face${modelSrc.faces.length > 1 ? 's' : ''}` : ''}</dd></div>
@@ -3561,7 +3998,7 @@
                                     <Param id="iso-u" label="U splits" value={isoU} min={1} max={12} step={1} decimals={0} unit="×" typedMax={64} onChange={v => setIsoU(Math.round(v))} />
                                     <Param id="iso-v" label="V splits" value={isoV} min={1} max={12} step={1} decimals={0} unit="×" typedMax={64} onChange={v => setIsoV(Math.round(v))} />
                                 </div> : <Param id="crease" label="Split angle" value={crease} min={5} max={90} step={1} decimals={0} unit="°" onChange={setCrease} />}
-                                <p className="hint">{isNurbs && splitMode === 'face' ? 'Each NURBS face is its own surface; U and V splits cut every face along its isocurves into equal parameter strips.' : 'Neighbouring faces that bend more than the split angle become separate surfaces; tangent faces merge into one.'} Grey lines in the 3D view show the result.</p>
+                                <p className="hint">{isNurbs && splitMode === 'face' ? 'Each face from the CAD file is its own surface; U and V splits cut every face along its isocurves into equal parameter strips.' : 'Neighbouring faces that bend more than the split angle become separate surfaces; tangent faces merge into one.'} Grey lines in the 3D view show the result.</p>
                                 <div className={`surface-card ${selectedIds.size ? '' : 'empty'}`}>
                                     {selectedIds.size ? <>
                                         <dl className="facts">
@@ -3585,7 +4022,11 @@
                                     <div className="btn-row">
                                         <button className={`btn-ghost ${fitPending ? 'accent' : ''}`} disabled={!fitPending} title="Scale the whole pattern (pitch, hole sizes and size field) to this surface and centre it" onClick={() => applyFit(false)}><Icon name={fitPending ? 'maximize-2' : 'check'} size={14} />{fitPending ? 'Fit pattern' : 'Pattern fitted'}</button>
                                     </div>
-                                </div> : slopeBlocked ? <p className="note"><Icon name="info" size={13} />Every face of this selection is steeper than {fmt(maxSlope, 0)}° from above, so Top view has nowhere to put holes. Raise Max slope, or pick another method.</p>
+                                </div> : slopeBlocked ? <>
+                                    <p className="note"><Icon name="info" size={13} />Every face of this selection is steeper than {fmt(maxSlope, 0)}° from above, so Top view has nowhere to put holes. Raise Max slope, or pick another method.</p>
+                                    {/* 牆面、圓柱側面：一鍵改用能展開它的方法（CAD 面用 Surface UV，網格用 BFF） */}
+                                    <div className="btn-row"><button className="btn-ghost accent" onClick={() => setUnwrapMode(isNurbs ? 'nurbs' : 'conformal')}><Icon name="arrow-right" size={14} />Unwrap with {isNurbs ? 'Surface UV' : 'BFF'}</button></div>
+                                </>
                                     : <p className="hint">Select a surface in step 2 to unwrap it into the flat panel.</p>}
                                 <label className="check"><input type="checkbox" checked={autoFit} onChange={e => { setAutoFit(e.target.checked); autoRef.current = null; }} />Auto-fit the pattern to each new surface</label>
                             </Section>

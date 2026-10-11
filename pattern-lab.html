@@ -291,6 +291,7 @@
             bCX: 0, bCY: 0, bRad: 60,
             quadPts: [ {x: -100, y: -50}, {x: 100, y: -50}, {x: 120, y: 50}, {x: -120, y: 50} ],
             influenceRange: 35, attractorRadius: 60, falloff: 1.0,
+            attractorX: 0, attractorY: 0, attractorLock: false,
             rotation: 0, mirrorCount: 6,
             patternX: 0, patternY: 0, scaleHoles: true,
             cvs: [ {x: -50, y: -20}, {x: -20, y: 30}, {x: 15, y: -25}, {x: 50, y: 20} ],
@@ -325,6 +326,9 @@
             }
             return out;
         };
+
+        // 放射尺寸場（虛線圓）的圓心：鎖定時跟著陣列中心走
+        const ringCentre = (P) => P.attractorLock ? { x: P.patternX, y: P.patternY } : { x: P.attractorX, y: P.attractorY };
 
         const STORE_KEY = 'patternLab.v9';
         const loadStore = () => { try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; } };
@@ -668,7 +672,7 @@
         }));
 
         const UNITS = [{ value: 'mm', label: 'mm', k: 1 }, { value: 'cm', label: 'cm', k: 10 }, { value: 'in', label: 'inch', k: 25.4 }];
-        const UNWRAPS = [{ value: 'top', label: 'Top view' }, { value: 'auto', label: 'Auto' }, { value: 'planar', label: 'Planar' }, { value: 'cylinder', label: 'Cylinder' }, { value: 'conformal', label: 'BFF' }, { value: 'nurbs', label: 'Surface UV' }];
+        const UNWRAPS = [{ value: 'conformal', label: 'BFF' }, { value: 'top', label: 'Top view' }, { value: 'planar', label: 'Planar' }, { value: 'cylinder', label: 'Cylinder' }];
         const SPLITS = [{ value: 'face', label: 'CAD faces' }, { value: 'angle', label: 'Crease angle' }];
         const UP_AXES = [{ value: 'z', label: 'Z up' }, { value: 'y', label: 'Y up' }];
         // 上視圖的畫面座標軸：往 -up 看時，畫面右方與上方對應的模型方向
@@ -811,7 +815,7 @@
             }
             return { label, area, count, face };
         };
-        // 每個曲面屬於哪個 NURBS 面（跨面則為 -1）；Surface UV 只能用在單一面
+        // 每個曲面屬於哪個 NURBS 面（跨面則為 -1）
         const attachFaces = (model, L) => {
             if (!model.triFace || L.face) return L;
             const face = new Int32Array(L.area.length).fill(-2);
@@ -877,18 +881,6 @@
                 nx += a * x; ny += a * y; nz += a * z; area += a;
             });
             return { C, mean: [nx, ny, nz], area };
-        };
-
-        // Auto：大致朝上（或整片朝下）→ Top view（陣列依上視圖排列再垂直投影）；近乎平面 → Planar；法線都垂直於同一軸 → Cylinder；其他 → Conformal
-        const chooseUnwrap = (model, tris, up) => {
-            const { C, mean, area } = normalCovariance(model, tris);
-            // 法線整片朝下（翻轉的薄殼或底面）一樣以上視圖處理
-            const sgn = v3.dot(mean, up) < 0 ? -1 : 1; let facing = 0;
-            tris.forEach(t => { if (sgn * (model.fn[t * 3] * up[0] + model.fn[t * 3 + 1] * up[1] + model.fn[t * 3 + 2] * up[2]) > 0.1) facing += model.fa[t]; });
-            if (sgn * v3.dot(mean, up) / area > 0.5 && facing / area > 0.95) return 'top';
-            if (Math.hypot(...mean) / area > 0.985) return 'planar';
-            const ev = eigSym3(C).values;
-            return ev[0] / (ev[0] + ev[1] + ev[2]) < 0.02 ? 'cylinder' : 'conformal';
         };
 
         // LSCM（最小平方保角展開）：以 Jacobi 預條件共軛梯度解，固定兩個頂點
@@ -1181,10 +1173,6 @@
                 // 上視圖投影：平面座標就是模型的上視圖（X 向右、往上看為畫面上方），孔沿 up 軸垂直投影到曲面
                 const [R, U] = viewBasis(up);
                 for (let i = 0; i < tris.length; i++) for (let k = 0; k < 3; k++) { const p = pt(lt[i * 3 + k]); uv[i * 6 + k * 2] = v3.dot(p, R); uv[i * 6 + k * 2 + 1] = -v3.dot(p, U); }
-            } else if (method === 'nurbs') {
-                // Surface UV：沿 NURBS 的 u、v 參數展開（依弧長重新參數化），陣列沿等參數線排列，和 Rhino／Grasshopper 的曲面映射一致
-                const fi = model.faceInfo[model.triFace[tris[0]]], mir = fi.flipped !== !!model.inward ? -1 : 1;
-                tris.forEach((t, i) => { for (let k = 0; k < 3; k++) { uv[i * 6 + k * 2] = mir * arcAt(fi.uMap, model.cuv[t * 6 + k * 2]); uv[i * 6 + k * 2 + 1] = -arcAt(fi.vMap, model.cuv[t * 6 + k * 2 + 1]); } });
             } else if (method === 'cylinder') {
                 let A = eigSym3(C).vectors[0];
                 const au = v3.dot(A, up);
@@ -1205,6 +1193,10 @@
                 const D = det3(M); const col = (j) => M.map((row, i) => row.map((v, k) => k === j ? rhs[i] : v));
                 const [cD, cE, cF] = [0, 1, 2].map(j => det3(col(j)) / D);
                 const cx = -cD / 2, cy = -cE / 2, R = Math.sqrt(Math.max(cx * cx + cy * cy - cF, 1e-9));
+                // 近乎平面的面：圓擬合發散（半徑無限大或 NaN），改用平面投影，否則整頁會卡住
+                let span = 0; for (let l = 0; l < n; l++) span = Math.max(span, Math.hypot(X[l] - X[0], Y[l] - Y[0], Hh[l] - Hh[0]));
+                if (Math.hypot(...mean) / area > 0.9995 || !Number.isFinite(R) || !Number.isFinite(cx + cy) || R > 50 * span) { fallback = true; why = 'flat'; }
+                else {
                 // 接縫放在曲面背面；法線朝內（凹面）時左右鏡射
                 let mx = 0, my = 0, outward = 0;
                 tris.forEach((t, i) => {
@@ -1222,7 +1214,10 @@
                     if (Math.max(...a) - Math.min(...a) > Math.PI) a = a.map(x => x < 0 ? x + Math.PI * 2 : x);
                     for (let k = 0; k < 3; k++) { uv[i * 6 + k * 2] = a[k] * R * sgn; uv[i * 6 + k * 2 + 1] = -Hh[lt[i * 3 + k]]; }
                 }
-            } else {
+                }
+            }
+            let tube = false;
+            if (method !== 'top' && (method !== 'cylinder' || why === 'flat')) {
                 let N = Math.hypot(...mean) > 1e-6 * area ? v3.norm(mean) : eigSym3(C).vectors[2];
                 const ref = Math.abs(v3.dot(N, up)) < 0.9 ? up : (up[1] ? [0, 0, -1] : [0, 1, 0]);
                 const d = v3.dot(ref, N); const e2 = v3.norm([ref[0] - d * N[0], ref[1] - d * N[1], ref[2] - d * N[2]]); const e1 = v3.cross(e2, N);
@@ -1235,10 +1230,12 @@
                     if (!open) { fallback = true; why = 'closed'; }
                     else if (n > 60000) { fallback = true; why = 'size'; }
                     else { const B = bffSolve(P, lt, U); if (B && sane(B)) { U = B; solver = 'bff'; } else { const L2 = lscmSolve(P, lt, U); if (sane(L2)) { U = L2; solver = 'lscm'; } else { fallback = true; why = 'failed'; } } }
+                    // 兩端開口的管狀面（圓柱側面）BFF 打不開，LSCM 會壓成環形：提示改用 Cylinder
+                    if (solver !== 'bff') { const ev = eigSym3(C).values; tube = Math.hypot(...mean) / area < 0.9 && ev[0] / (ev[0] + ev[1] + ev[2]) < 0.02; }
                 }
                 for (let i = 0; i < tris.length; i++) for (let k = 0; k < 3; k++) { const l = lt[i * 3 + k]; uv[i * 6 + k * 2] = U[l * 2]; uv[i * 6 + k * 2 + 1] = U[l * 2 + 1]; }
             }
-            return { ...buildUVPatch(model, tris, uv), method: fallback ? 'planar' : method, fallback, why, solver, projected: method === 'top', skipped, maxSlope, up };
+            return { ...buildUVPatch(model, tris, uv), method: fallback ? 'planar' : method, fallback, why, solver, tube, projected: method === 'top', skipped, maxSlope, up };
         };
 
         // 平面座標 → 所在三角形與重心座標
@@ -1843,18 +1840,6 @@
             for (let i = 0; i < pu.length; i++) { const fx = i < nb && fixed.get(i); if (fx) { pos.set(fx, i * 3); continue; } P3(pu[i], pv[i]); pos[i * 3] = r[0]; pos[i * 3 + 1] = r[1]; pos[i * 3 + 2] = r[2]; }
             return { pos, u: pu, v: pv, tris, nb, ku, kv, box: [ua, ub2, va, vb2] };
         };
-        // 弧長重新參數化：沿 u（或 v）方向的平均速度累積成長度，給「Surface UV」展開用
-        const arcMap = (S, dirU, box) => {
-            const n = 128, r = new Float64Array(9), a = dirU ? box[0] : box[2], b = dirU ? box[1] : box[3], ts = new Float64Array(n + 1), xs = new Float64Array(n + 1);
-            let prev = 0;
-            for (let i = 0; i <= n; i++) {
-                const t = a + (b - a) * i / n; let sp = 0;
-                for (const f of [0.1, 0.3, 0.5, 0.7, 0.9]) { const s = dirU ? box[2] + (box[3] - box[2]) * f : box[0] + (box[1] - box[0]) * f; dirU ? S.eval(t, s, r) : S.eval(s, t, r); sp += dirU ? Math.hypot(r[3], r[4], r[5]) : Math.hypot(r[6], r[7], r[8]); }
-                sp /= 5; ts[i] = t; xs[i] = i ? xs[i - 1] + (sp + prev) / 2 * (b - a) / n : 0; prev = sp;
-            }
-            return { ts, xs };
-        };
-        const arcAt = (m, t) => { const n = m.ts.length - 1, a = m.ts[0], b = m.ts[n]; const f = clamp((t - a) / ((b - a) || 1) * n, 0, n), i = Math.min(Math.floor(f), n - 1); return m.xs[i] + (m.xs[i + 1] - m.xs[i]) * (f - i); };
 
         // 已取樣的邊（3D 點）；以中點的空間雜湊查找，端點、中點、四分點與長度都吻合才算同一條邊（反向時比對四分之三點）
         const edgeCache = (h) => {
@@ -1919,7 +1904,7 @@
                     c.forEach((li, e) => { const gi = base[f] + li; tri.set([X[gi * 3], X[gi * 3 + 1], X[gi * 3 + 2]], o * 9 + e * 3); cuv[o * 6 + e * 2] = p.u[li]; cuv[o * 6 + e * 2 + 1] = p.v[li]; });
                     triFace[o++] = f;
                 }
-                info.push({ flipped: fl, box: p.box, uMap: arcMap(faces[f].S, true, p.box), vMap: arcMap(faces[f].S, false, p.box) });
+                info.push({ flipped: fl, box: p.box });
             });
             return { tri: tri.slice(0, o * 9), triFace: triFace.slice(0, o), cuv: cuv.slice(0, o * 6), info, failed: parts.filter(p => !p).length };
         };
@@ -2464,7 +2449,8 @@
             const k = Math.sqrt((to.w * to.h) / (from.w * from.h));
             const M = (pt) => ({ x: r4(to.cx + k * (pt.x - from.cx)), y: r4(to.cy + k * (pt.y - from.cy)) });
             const o = M({ x: P.patternX, y: P.patternY });
-            let Q = { ...spreadParams(P, k), patternX: o.x, patternY: o.y, attractorRadius: r4(P.attractorRadius * k), influenceRange: r4(P.influenceRange * k), cvs: P.cvs.map(M), linePts: P.linePts.map(M) };
+            const ac = M({ x: P.attractorX, y: P.attractorY });
+            let Q = { ...spreadParams(P, k), patternX: o.x, patternY: o.y, attractorX: ac.x, attractorY: ac.y, attractorRadius: r4(P.attractorRadius * k), influenceRange: r4(P.influenceRange * k), cvs: P.cvs.map(M), linePts: P.linePts.map(M) };
             if (P.scaleHoles) { Q.baseDiameter = r4(P.baseDiameter * k); Q.minDiameter = r4(P.minDiameter * k); }
             if (P.patternType === 'splineGrid') {
                 if (splineCovers(P, from) && !splineCovers(Q, to)) {
@@ -2845,8 +2831,8 @@
             // 選取以 3D 點 {p, n} 記錄，重新網格化後仍指向同一個曲面
             const [seeds, setSeeds] = useState([]);
             // 步驟 3：展開
-            // 平面面板預設就是零件的上視圖
-            const [unwrapMode, setUnwrapMode] = useState('top');
+            // 預設用 BFF：保持孔形與邊長，任何曲面都能展開
+            const [unwrapMode, setUnwrapMode] = useState('conformal');
             // 上視圖投影的最大坡度：更陡的面不開孔
             const [maxSlope, setMaxSlope] = useState(60);
             // 選了曲面就把圖案等比套合上去
@@ -2883,15 +2869,11 @@
                 const out = []; for (let t = 0; t < model.T; t++) if (selectedIds.has(labels.label[t])) out.push(t);
                 return out.length ? out : null;
             }, [labels, selectedIds]);
-            // 選取是否在同一個 NURBS 面內（Surface UV 需要）
-            const selFace = useMemo(() => { if (!labels?.face || !selectedIds.size) return -1; const fs = new Set([...selectedIds].map(id => labels.face[id])); return fs.size === 1 ? [...fs][0] : -1; }, [labels, selectedIds]);
             const uvPatch = useMemo(() => {
                 if (!mode3D || !model || !patchTris) return null;
                 const up = upAxis === 'y' ? [0, 1, 0] : [0, 0, 1];
-                let method = unwrapMode === 'auto' ? chooseUnwrap(model, patchTris, up) : unwrapMode;
-                if (method === 'nurbs' && selFace < 0) method = chooseUnwrap(model, patchTris, up);
-                return unwrapPatch(model, patchTris, method, up, maxSlope);
-            }, [mode3D, model, patchTris, unwrapMode, upAxis, maxSlope, selFace]);
+                return unwrapPatch(model, patchTris, unwrapMode, up, maxSlope);
+            }, [mode3D, model, patchTris, unwrapMode, upAxis, maxSlope]);
             // 選了曲面但上視圖找不到夠平的面
             const slopeBlocked = mode3D && !!patchTris && !uvPatch;
             // 換模型：網格化參數回到預設、選取重設
@@ -3079,10 +3061,11 @@
                 };
 
                 // 尺寸場影響值 s：在吸引子上為 0、超出影響範圍為 1（已套用 Falloff）
+                const ring = ringCentre(P);
                 const fieldS = (x, y) => {
                     if (attractorMode === 'none') return 1;
                     let dAtt = 0;
-                    if (attractorMode === 'radial') dAtt = Math.abs(Math.sqrt(x*x + y*y) - P.attractorRadius);
+                    if (attractorMode === 'radial') dAtt = Math.abs(Math.hypot(x - ring.x, y - ring.y) - P.attractorRadius);
                     else if (attractorMode === 'curve') {
                         let minD = Infinity;
                         for (let i = 0; i <= 20; i++) {
@@ -3113,7 +3096,7 @@
                     if (attractorMode !== 'none') tilt -= P.holeTwist * (1 - s) * Math.PI / 180;
                     if (P.holeOrient === 'radial') return Math.atan2(y - P.patternY, x - P.patternX) + tilt;
                     if (P.holeOrient === 'field') {
-                        if (attractorMode === 'radial') return Math.atan2(y, x) + Math.PI / 2 + tilt;
+                        if (attractorMode === 'radial') return Math.atan2(y - ring.y, x - ring.x) + Math.PI / 2 + tilt;
                         if (attractorMode === 'line') { const [a, b] = P.linePts; return Math.atan2(b.y - a.y, b.x - a.x) + tilt; }
                         if (attractorMode === 'curve') {
                             const pts = P.cvs; const d2 = (t) => { const p = getBezierPoint(t, pts); return (p.x - x)**2 + (p.y - y)**2; };
@@ -3363,8 +3346,11 @@
                         const color = COLORS[attractorMode];
                         ctx.strokeStyle = color; ctx.lineWidth = 1.5;
                         if (attractorMode === 'radial') {
-                            ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(cx, cy, params.attractorRadius * zoom, 0, Math.PI*2); ctx.stroke();
-                            ctx.setLineDash([]); handle(params.attractorRadius, 0, color, 6);
+                            const rc = ringCentre(params);
+                            ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(X(rc.x), Y(rc.y), params.attractorRadius * zoom, 0, Math.PI*2); ctx.stroke();
+                            ctx.setLineDash([]); handle(rc.x + params.attractorRadius, rc.y, color, 6);
+                            // 圓心：未鎖定時可拖曳（十字＋小圓點）；鎖定時與陣列中心的菱形重合
+                            if (!params.attractorLock) { ctx.beginPath(); ctx.moveTo(X(rc.x) - 9, Y(rc.y)); ctx.lineTo(X(rc.x) + 9, Y(rc.y)); ctx.moveTo(X(rc.x), Y(rc.y) - 9); ctx.lineTo(X(rc.x), Y(rc.y) + 9); ctx.stroke(); handle(rc.x, rc.y, color, 4, 1.5); }
                         } else {
                             ctx.beginPath();
                             const pts = attractorMode === 'curve' ? params.cvs : params.linePts;
@@ -3441,7 +3427,13 @@
                 if (near(gz.r[0], gz.r[1])) return { mode: 'patternRotate', a0: Math.atan2(-(m.y - params.patternY), m.x - params.patternX), r0: params.rotation };
                 if (near(gz.s[0], gz.s[1])) return { mode: 'patternScale', d0: Math.max(dist(m.x, m.y, params.patternX, params.patternY), 1e-6), base: params };
                 if (near(gz.c[0], gz.c[1])) return { mode: 'patternMove', start: m, x0: params.patternX, y0: params.patternY };
-                if (attractorMode === 'radial' && near(params.attractorRadius, 0)) return { mode: 'radialRadius' };
+                if (attractorMode === 'radial') {
+                    const rc = ringCentre(params);
+                    if (near(rc.x + params.attractorRadius, rc.y)) return { mode: 'radialRadius' };
+                    // 拖圓心或虛線本身都能移動；鎖定時跟著陣列走，不能單獨移動
+                    if (!params.attractorLock && (near(rc.x, rc.y) || Math.abs(dist(m.x, m.y, rc.x, rc.y) - params.attractorRadius) * view.zoom < HANDLE_RADIUS * 0.6))
+                        return { mode: 'radialMove', dx: rc.x - m.x, dy: rc.y - m.y };
+                }
                 if (patternType === 'splineGrid') {
                     for (let key of ['boundarySplineA', 'boundarySplineB']) {
                         for (let i = 0; i < 4; i++) if (near(...place(params[key][i].x, params[key][i].y))) return { mode: 'points', key, index: i, local: true };
@@ -3509,7 +3501,12 @@
                 } else if (drag.mode === 'boundaryCircleSize') {
                     setParams(p => ({ ...p, bRad: Math.max(5, dist(mx, my, p.bCX, p.bCY)) }));
                 } else if (drag.mode === 'radialRadius') {
-                    setParams(p => ({ ...p, attractorRadius: Math.max(0, Math.sqrt(mx*mx + my*my)) }));
+                    setParams(p => { const rc = ringCentre(p); return { ...p, attractorRadius: +Math.max(0, dist(mx, my, rc.x, rc.y)).toFixed(3) }; });
+                } else if (drag.mode === 'radialMove') {
+                    // 靠近陣列中心時吸附過去
+                    let x = mx + drag.dx, y = my + drag.dy;
+                    if (dist(x, y, params.patternX, params.patternY) * view.zoom < HANDLE_RADIUS) { x = params.patternX; y = params.patternY; }
+                    setParams(p => ({ ...p, attractorX: +x.toFixed(3), attractorY: +y.toFixed(3) }));
                 } else if (drag.mode === 'patternMove') {
                     setParams(p => ({ ...p, patternX: drag.x0 + mx - drag.start.x, patternY: drag.y0 + my - drag.start.y }));
                 } else if (drag.mode === 'patternRotate') {
@@ -3567,6 +3564,19 @@
             };
 
             // SVG：1:1 mm，外框與圓孔分成兩個群組（CAD 匯入時成為兩個圖層）
+            // 每個孔的 SVG 元素（mm，與平面面板同一座標）
+            const holesSVG = (n) => {
+                const shape = params.holeShape; let out = '';
+                dots.forEach(d => {
+                    const cx = n(d.x), cy = n(d.y), w = d.dia, l = d.len, deg = n(d.ang * 180 / Math.PI);
+                    const rot = deg ? ` transform="rotate(${deg} ${cx} ${cy})"` : '';
+                    if (shape === 'round') out += `<circle cx="${cx}" cy="${cy}" r="${n(w / 2)}"/>`;
+                    else if (shape === 'ellipse') out += `<ellipse cx="${cx}" cy="${cy}" rx="${n(l / 2)}" ry="${n(w / 2)}"${rot}/>`;
+                    else if (shape === 'hex' || shape === 'tri') out += `<polygon points="${(shape === 'hex' ? hexVerts : triVerts)(w, l).map(([lx, ly]) => `${n(d.x + lx * Math.cos(d.ang) - ly * Math.sin(d.ang))},${n(d.y + lx * Math.sin(d.ang) + ly * Math.cos(d.ang))}`).join(' ')}"/>`;
+                    else { const r = shape === 'slot' ? w / 2 : cornerRadius(d, params.holeCorner); out += `<rect x="${n(d.x - l / 2)}" y="${n(d.y - w / 2)}" width="${n(l)}" height="${n(w)}" rx="${n(r)}"${rot}/>`; }
+                });
+                return out;
+            };
             const exportSVG = () => {
                 setMenu(null);
                 const b = getBounds();
@@ -3582,17 +3592,7 @@
                 let svg = `<svg width="${width}mm" height="${height}mm" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
                 svg += `<g transform="translate(${n(-b.minX)}, ${n(-b.minY)})">`;
                 svg += `<g id="boundary" fill="none" stroke="#e11d48" stroke-width="0.1">${outline}</g>`;
-                svg += `<g id="holes" fill="${params.color}">`;
-                const shape = params.holeShape;
-                dots.forEach(d => {
-                    const cx = n(d.x), cy = n(d.y), w = d.dia, l = d.len, deg = n(d.ang * 180 / Math.PI);
-                    const rot = deg ? ` transform="rotate(${deg} ${cx} ${cy})"` : '';
-                    if (shape === 'round') svg += `<circle cx="${cx}" cy="${cy}" r="${n(w / 2)}"/>`;
-                    else if (shape === 'ellipse') svg += `<ellipse cx="${cx}" cy="${cy}" rx="${n(l / 2)}" ry="${n(w / 2)}"${rot}/>`;
-                    else if (shape === 'hex' || shape === 'tri') svg += `<polygon points="${(shape === 'hex' ? hexVerts : triVerts)(w, l).map(([lx, ly]) => `${n(d.x + lx * Math.cos(d.ang) - ly * Math.sin(d.ang))},${n(d.y + lx * Math.sin(d.ang) + ly * Math.cos(d.ang))}`).join(' ')}"/>`;
-                    else { const r = shape === 'slot' ? w / 2 : cornerRadius(d, params.holeCorner); svg += `<rect x="${n(d.x - l / 2)}" y="${n(d.y - w / 2)}" width="${n(l)}" height="${n(w)}" rx="${n(r)}"${rot}/>`; }
-                });
-                svg += `</g></g></svg>`;
+                svg += `<g id="holes" fill="${params.color}">${holesSVG(n)}</g></g></svg>`;
                 deliver(`${fileBase()}.svg`, new Blob([svg], { type: 'image/svg+xml' }), 'SVG drawing');
             };
 
@@ -3671,6 +3671,73 @@
                     rows.push([++k, ...p.map(f), ...nrm.map(f), ...axis.map(f), params.holeShape, d.dia.toFixed(3), d.len.toFixed(3), ...cut.map(f)].join(','));
                 });
                 deliver(`${fileBase()}-3d.csv`, new Blob([rows.join('\n') + '\n'], { type: 'text/csv' }), '3D hole table');
+            };
+
+            // 網格匯出（OBJ，模型原座標 mm）：展開的曲面帶 UV，其餘部分另成一檔
+            // UV 正規化到 0–1 的正方形（邊長 = 平面寬高的較大者），與 UV map 圖一一對應；v 朝上
+            const uvSquare = () => { const b = uvPatch.bounds; return { x0: b.minX, y0: b.minY, S: Math.max(b.maxX - b.minX, b.maxY - b.minY) || 1 }; };
+            const meshOBJ = (name, tris, withUV) => {
+                const f6 = (v) => (+v.toFixed(6)).toString(), vid = new Map(), tid = new Map(), V = [], VT = [], F = [];
+                const sq = withUV && uvSquare();
+                tris.forEach((t, i) => {
+                    const c = [0, 1, 2].map(k => {
+                        const g = model.vIndex[t * 3 + k]; let a = vid.get(g);
+                        if (a === undefined) { a = vid.size + 1; vid.set(g, a); V.push(`v ${f6(model.vPos[g * 3])} ${f6(model.vPos[g * 3 + 1])} ${f6(model.vPos[g * 3 + 2])}`); }
+                        if (!withUV) return a;
+                        const u = (uvPatch.uv[i * 6 + k * 2] - sq.x0) / sq.S, w = 1 - (uvPatch.uv[i * 6 + k * 2 + 1] - sq.y0) / sq.S, key = f6(u) + ' ' + f6(w);
+                        let b = tid.get(key); if (b === undefined) { b = tid.size + 1; tid.set(key, b); VT.push('vt ' + key); }
+                        return a + '/' + b;
+                    });
+                    F.push('f ' + c.join(' '));
+                });
+                const head = [`# pattern LAB · ${model.name || 'model'} · ${name}`, '# units: mm, same coordinates as the loaded model'];
+                if (withUV) head.push(`# UV: 0–1 = ${fmt(sq.S, 3)} mm square; flat size ${fmt(boundW, 1)} × ${fmt(boundH, 1)} mm; matches the UV map export`);
+                return [...head, `o ${name}`, ...V, ...VT, ...F, ''].join('\n');
+            };
+            const exportSurfaceOBJ = () => {
+                setMenu(null);
+                if (!uvPatch || !model) return;
+                deliver(`${fileBase()}-surface.obj`, new Blob([meshOBJ('unwrapped_surface', Array.from(uvPatch.tris), true)], { type: 'model/obj' }), 'Unwrapped surface');
+            };
+            const exportRestOBJ = () => {
+                setMenu(null);
+                if (!uvPatch || !model) return;
+                const inPatch = new Uint8Array(model.T); uvPatch.tris.forEach(t => { inPatch[t] = 1; });
+                const rest = []; for (let t = 0; t < model.T; t++) if (!inPatch[t]) rest.push(t);
+                if (!rest.length) { notify('The unwrapped surface is the whole model, so there is nothing else to export'); return; }
+                deliver(`${fileBase()}-rest.obj`, new Blob([meshOBJ('rest_of_part', rest, false)], { type: 'model/obj' }), 'Rest of the part');
+            };
+            // UV map：與 OBJ 的 UV 同一個正方形；三角網格、外框與孔分別成層
+            const uvEdges = () => {
+                const uv = uvPatch.uv, seen = new Set(), out = [];
+                for (let i = 0; i < uv.length; i += 6) for (let k = 0; k < 3; k++) {
+                    const a = i + k * 2, b = i + ((k + 1) % 3) * 2, ka = uv[a].toFixed(4) + ',' + uv[a + 1].toFixed(4), kb = uv[b].toFixed(4) + ',' + uv[b + 1].toFixed(4), key = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+                    if (!seen.has(key)) { seen.add(key); out.push(uv[a], uv[a + 1], uv[b], uv[b + 1]); }
+                }
+                return out;
+            };
+            const exportUVMapSVG = () => {
+                setMenu(null);
+                if (!uvPatch) return;
+                const n = (v) => +v.toFixed(3), sq = uvSquare(), w = uvEdges(), e = uvPatch.edges;
+                const seg = (a) => { let d = ''; for (let i = 0; i < a.length; i += 4) d += `M${n(a[i])} ${n(a[i + 1])}L${n(a[i + 2])} ${n(a[i + 3])}`; return d; };
+                let svg = `<svg width="${n(sq.S)}mm" height="${n(sq.S)}mm" viewBox="${n(sq.x0)} ${n(sq.y0)} ${n(sq.S)} ${n(sq.S)}" xmlns="http://www.w3.org/2000/svg">`;
+                svg += `<rect id="uv-square" x="${n(sq.x0)}" y="${n(sq.y0)}" width="${n(sq.S)}" height="${n(sq.S)}" fill="#fff"/>`;
+                svg += `<g id="mesh" fill="none" stroke="#9ca3af" stroke-width="${n(sq.S / 2000)}"><path d="${seg(w)}"/></g>`;
+                svg += `<g id="outline" fill="none" stroke="#e11d48" stroke-width="${n(sq.S / 800)}"><path d="${seg(e)}"/></g>`;
+                svg += `<g id="holes" fill="#111">${holesSVG(n)}</g></svg>`;
+                deliver(`${fileBase()}-uvmap.svg`, new Blob([svg], { type: 'image/svg+xml' }), 'UV map');
+            };
+            const exportUVMapPNG = () => {
+                setMenu(null);
+                if (!uvPatch) return;
+                const N = 4096, sq = uvSquare(), k = N / sq.S, cv = document.createElement('canvas'); cv.width = cv.height = N;
+                const ctx = cv.getContext('2d'), Xp = (x) => (x - sq.x0) * k, Yp = (y) => (y - sq.y0) * k;
+                ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, N, N);
+                const stroke = (a, color, lw) => { ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.beginPath(); for (let i = 0; i < a.length; i += 4) { ctx.moveTo(Xp(a[i]), Yp(a[i + 1])); ctx.lineTo(Xp(a[i + 2]), Yp(a[i + 3])); } ctx.stroke(); };
+                stroke(uvEdges(), '#c4c8cf', 1); stroke(uvPatch.edges, '#e11d48', 3);
+                ctx.fillStyle = '#111'; ctx.beginPath(); dots.forEach(d => traceHolePath(ctx, d, Xp, Yp, k, params.holeShape, params.holeCorner)); ctx.fill();
+                cv.toBlob(blob => blob ? deliver(`${fileBase()}-uvmap.png`, blob, 'UV map') : notify('Couldn’t render the UV map'), 'image/png');
             };
 
             // STL（網格）或 IGES（NURBS 面）
@@ -3883,7 +3950,7 @@
             // 投影時面積比 = cos(坡度)，孔在斜面上沿坡度方向拉長 1/cos 倍
             const slopeStretch = uvPatch?.projected ? Math.round((1 / Math.max(1 + uvPatch.stretch[0], 0.01) - 1) * 100) : 0;
             const areaWarp = uvPatch && !uvPatch.projected ? Math.max(Math.abs(uvPatch.stretch[0]), Math.abs(uvPatch.stretch[1])) : 0;
-            const layoutLabel = !uvPatch ? '' : (unwrapMode === 'auto' ? 'Auto → ' : '') + (uvPatch.projected ? 'Top view' : uvPatch.solver === 'bff' ? 'BFF' : uvPatch.solver === 'lscm' ? 'LSCM' : UNWRAPS.find(u => u.value === uvPatch.method).label);
+            const layoutLabel = !uvPatch ? '' : (uvPatch.projected ? 'Top view' : uvPatch.solver === 'bff' ? 'BFF' : uvPatch.solver === 'lscm' ? 'LSCM' : UNWRAPS.find(u => u.value === uvPatch.method).label);
             const surfaceFacts = !uvPatch ? [] : [
                 ['Flat size', `${fmt(boundW, 1)} × ${fmt(boundH, 1)} mm`],
                 ['Layout', layoutLabel],
@@ -3893,15 +3960,15 @@
             const surfaceNote = !uvPatch ? null
                 : uvPatch.why === 'closed' ? 'This selection is a closed surface, so it can’t be flattened in one piece and was projected flat instead. Select fewer faces, lower the split angle, or use Top view.'
                 : uvPatch.why === 'size' ? 'BFF handles up to 60,000 vertices, so this surface was projected flat. Raise Max edge in step 1, or select a smaller surface.'
+                : uvPatch.why === 'flat' ? 'This surface is flat, so there is no cylinder to unroll. It was projected flat instead.'
+                : uvPatch.tube && !uvPatch.fallback ? 'This surface is a closed tube, so BFF can’t open it flat and it was squeezed into a ring. Cylinder unrolls it exactly.'
                 : uvPatch.fallback ? 'BFF couldn’t flatten this surface cleanly, so it was projected flat instead. Try splitting it into smaller surfaces.'
-                : unwrapMode === 'nurbs' && uvPatch.method !== 'nurbs' ? 'Surface UV follows the isocurves of one CAD face. This selection spans several faces, so Auto was used instead.'
                 : uvPatch.solver === 'lscm' ? 'This surface has more than one edge loop, so it was flattened with LSCM instead of BFF.'
                 : uvPatch.projected && slopeStretch > 40 ? 'Holes on the steep parts stretch along the slope. Lower Max slope to keep them round, or use BFF.'
                 : areaWarp > 0.1 ? 'Holes will look distorted on the part. Try another unwrap or a smaller surface.' : null;
-            const UNWRAP_HINTS = { top: 'Rows are laid out in plan view and each hole drops straight down onto the part.', auto: 'Picks Top view, Planar, Cylinder or BFF to suit each selection.', planar: 'Projects onto the surface’s best-fit plane.', cylinder: 'Unrolls around the fitted cylinder axis; true cylinders keep their size.', conformal: 'Boundary First Flattening keeps hole shapes and edge lengths and spreads any area change.', nurbs: 'Lays rows along the face’s own u and v isocurves, spaced by true length, the way Grasshopper maps onto a surface. Cylinders and cones unroll exactly.' };
+            const UNWRAP_HINTS = { top: 'Rows are laid out in plan view and each hole drops straight down onto the part.', planar: 'Projects onto the surface’s best-fit plane.', cylinder: 'Unrolls around the fitted cylinder axis; true cylinders keep their size.', conformal: 'Boundary First Flattening keeps hole shapes and edge lengths and spreads any area change.' };
             const selArea = labels ? [...selectedIds].reduce((a, id) => a + labels.area[id], 0) : 0;
             const nSurf = labels ? labels.area.length : 0;
-            const unwrapOptions = isNurbs ? UNWRAPS : UNWRAPS.filter(u => u.value !== 'nurbs');
             const srcTris = modelSrc?.kind === 'mesh' ? modelSrc.tri.length / 9 : 0;
             // 網格化滑桿的範圍依模型大小
             const tessScale = useMemo(() => modelSrc ? +(sourceDiag(modelSrc) * unitK).toPrecision(2) : 100, [modelSrc, unitK]);
@@ -3940,7 +4007,12 @@
                             { icon: 'pen-tool', label: 'SVG drawing', hint: uvPatch ? 'Unwrapped flat pattern, 1:1 mm' : '1:1 mm · holes and outline in separate groups', onClick: exportSVG },
                             { icon: 'drafting-compass', label: 'DXF drawing', hint: uvPatch ? (uvPatch.projected ? 'Top-view pattern in the model’s own X/Y' : 'Unwrapped flat pattern for CAD and laser') : '1:1 mm for CAD and laser · Y up, origin at centre', onClick: exportDXF },
                             { icon: 'sheet', label: 'Hole table (CSV)', hint: uvPatch ? 'Flat x, y, size for every hole' : 'x, y, Ø for every hole · same origin as DXF', onClick: exportCSV },
-                            ...(uvPatch ? [{ icon: 'box', label: '3D hole table (CSV)', hint: 'Position, normal, axis and cutting direction per hole, in STL coordinates', onClick: export3DCSV }] : []),
+                            ...(uvPatch ? [{ icon: 'box', label: '3D hole table (CSV)', hint: 'Position, normal, axis and cutting direction per hole, in STL coordinates', onClick: export3DCSV },
+                                '-',
+                                { icon: 'layers', label: 'Unwrapped surface (OBJ)', hint: 'The selected surface with its UVs, in the model’s coordinates', onClick: exportSurfaceOBJ },
+                                { icon: 'box', label: 'Rest of the part (OBJ)', hint: 'Everything except the unwrapped surface, same coordinates', onClick: exportRestOBJ },
+                                { icon: 'grid-2x2', label: 'UV map (PNG)', hint: '4096 px texture: mesh, outline and holes, matching the OBJ UVs', onClick: exportUVMapPNG },
+                                { icon: 'pen-tool', label: 'UV map (SVG)', hint: 'The same UV layout as vectors, 1:1 mm, in layers', onClick: exportUVMapSVG }] : []),
                             '-',
                             { icon: 'image', label: 'PNG preview', hint: mode3D ? 'High-resolution render of the 3D view' : '3× render of the current view', onClick: exportPNG }
                         ]} />
@@ -4002,8 +4074,8 @@
                                 </div>
                             </Section>
 
-                            <Section step={3} title="Unwrap" summary={uvPatch ? `${layoutLabel.replace('Auto → ', '')} · ${fmt(boundW, 0)}×${fmt(boundH, 0)}` : ''} open={openSections.unwrap} onToggle={toggleSection('unwrap')}>
-                                <Segmented label="Unwrap method" inline tight cols={3} options={unwrapOptions} value={unwrapMode} onChange={setUnwrapMode} />
+                            <Section step={3} title="Unwrap" summary={uvPatch ? `${layoutLabel} · ${fmt(boundW, 0)}×${fmt(boundH, 0)}` : ''} open={openSections.unwrap} onToggle={toggleSection('unwrap')}>
+                                <Segmented label="Unwrap method" inline tight cols={4} options={UNWRAPS} value={unwrapMode} onChange={setUnwrapMode} />
                                 <p className="hint">{UNWRAP_HINTS[unwrapMode]}</p>
                                 {(unwrapMode === 'top' || uvPatch?.projected) && <Param id="maxslope" label="Max slope" value={maxSlope} min={10} max={85} step={1} decimals={0} unit="°" onChange={setMaxSlope} />}
                                 {uvPatch ? <div className="surface-card">
@@ -4012,12 +4084,13 @@
                                     </dl>
                                     {surfaceNote && <p className="note"><Icon name="info" size={13} />{surfaceNote}</p>}
                                     <div className="btn-row">
+                                        {uvPatch.tube && unwrapMode === 'conformal' && <button className="btn-ghost accent" onClick={() => setUnwrapMode('cylinder')}><Icon name="arrow-right" size={14} />Unwrap with Cylinder</button>}
                                         <button className={`btn-ghost ${fitPending ? 'accent' : ''}`} disabled={!fitPending} title="Scale the whole pattern (pitch, hole sizes and size field) to this surface and centre it" onClick={() => applyFit(false)}><Icon name={fitPending ? 'maximize-2' : 'check'} size={14} />{fitPending ? 'Fit pattern' : 'Pattern fitted'}</button>
                                     </div>
                                 </div> : slopeBlocked ? <>
                                     <p className="note"><Icon name="info" size={13} />Every face of this selection is steeper than {fmt(maxSlope, 0)}° from above, so Top view has nowhere to put holes. Raise Max slope, or pick another method.</p>
-                                    {/* 牆面、圓柱側面：一鍵改用能展開它的方法（CAD 面用 Surface UV，網格用 BFF） */}
-                                    <div className="btn-row"><button className="btn-ghost accent" onClick={() => setUnwrapMode(isNurbs ? 'nurbs' : 'conformal')}><Icon name="arrow-right" size={14} />Unwrap with {isNurbs ? 'Surface UV' : 'BFF'}</button></div>
+                                    {/* 牆面、圓柱側面：一鍵改用 BFF */}
+                                    <div className="btn-row"><button className="btn-ghost accent" onClick={() => setUnwrapMode('conformal')}><Icon name="arrow-right" size={14} />Unwrap with BFF</button></div>
                                 </>
                                     : <p className="hint">Select a surface in step 2 to unwrap it into the flat panel.</p>}
                                 <label className="check"><input type="checkbox" checked={autoFit} onChange={e => { setAutoFit(e.target.checked); autoRef.current = null; }} />Auto-fit the pattern to each new surface</label>
@@ -4078,8 +4151,9 @@
                                     </div>
                                     <p className="hint">Type a target and every hole is resized to reach it; positions stay.</p>
                                 </div>
+                                {attractorMode === 'radial' && <label className="check"><input type="checkbox" checked={params.attractorLock} onChange={e => { const on = e.target.checked; setParams(p => on ? { ...p, attractorLock: true } : { ...p, attractorLock: false, attractorX: p.patternX, attractorY: p.patternY }); }} />Lock the ring to the array centre</label>}
                                 {fieldOn && <p className="hint"><span className="legend" style={{ background: COLORS[attractorMode] }}></span>
-                                    {attractorMode === 'radial' ? 'Holes shrink toward the dashed ring. Drag its handle to change the radius.' : attractorMode === 'curve' ? 'Holes shrink toward the curve. Drag its four control points.' : 'Holes shrink toward the line. Drag either end.'}
+                                    {attractorMode === 'radial' ? (params.attractorLock ? 'Holes shrink toward the dashed ring, which moves with the array. Drag its dot to change the radius.' : 'Holes shrink toward the dashed ring. Drag the ring or its centre to move it, and its dot to change the radius.') : attractorMode === 'curve' ? 'Holes shrink toward the curve. Drag its four control points.' : 'Holes shrink toward the line. Drag either end.'}
                                 </p>}
                             </Section>
 

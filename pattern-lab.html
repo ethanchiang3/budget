@@ -726,7 +726,16 @@
                 const l = Math.hypot(x, y, z) || 1; const o = t * 9 + k * 3;
                 cn[o] = x / l; cn[o + 1] = y / l; cn[o + 2] = z / l;
             }
-            return { name, T, V, tri, vIndex, vPos, fn, fa, adj, cn, bbox };
+            // 法線是否整體朝內（翻轉的 STL、或法線朝內側的開放薄殼）：Σ 面積 × n·(重心 − 外框中心)；封閉網格即 3 × 帶號體積
+            const c = [(bbox[0] + bbox[3]) / 2, (bbox[1] + bbox[4]) / 2, (bbox[2] + bbox[5]) / 2];
+            let sv = 0, sa = 0;
+            for (let t = 0; t < T; t++) {
+                const o = t * 9; let d = 0;
+                for (let k = 0; k < 3; k++) d += fn[t * 3 + k] * ((tri[o + k] + tri[o + 3 + k] + tri[o + 6 + k]) / 3 - c[k]);
+                sv += fa[t] * d; sa += fa[t] * Math.abs(d);
+            }
+            const inward = sv < -0.2 * sa && sa > 0;
+            return { name, T, V, tri, vIndex, vPos, fn, fa, adj, cn, bbox, inward };
         };
 
         // 從點選的三角形向外擴張，遇到夾角大於分割角的邊就停
@@ -756,12 +765,13 @@
             return { C, mean: [nx, ny, nz], area };
         };
 
-        // Auto：大致朝上 → Top view（陣列依上視圖排列再垂直投影）；近乎平面 → Planar；法線都垂直於同一軸 → Cylinder；其他 → Conformal
+        // Auto：大致朝上（或整片朝下）→ Top view（陣列依上視圖排列再垂直投影）；近乎平面 → Planar；法線都垂直於同一軸 → Cylinder；其他 → Conformal
         const chooseUnwrap = (model, tris, up) => {
             const { C, mean, area } = normalCovariance(model, tris);
-            let facing = 0;
-            tris.forEach(t => { if (model.fn[t * 3] * up[0] + model.fn[t * 3 + 1] * up[1] + model.fn[t * 3 + 2] * up[2] > 0.1) facing += model.fa[t]; });
-            if (v3.dot(mean, up) / area > 0.5 && facing / area > 0.95) return 'top';
+            // 法線整片朝下（翻轉的薄殼或底面）一樣以上視圖處理
+            const sgn = v3.dot(mean, up) < 0 ? -1 : 1; let facing = 0;
+            tris.forEach(t => { if (sgn * (model.fn[t * 3] * up[0] + model.fn[t * 3 + 1] * up[1] + model.fn[t * 3 + 2] * up[2]) > 0.1) facing += model.fa[t]; });
+            if (sgn * v3.dot(mean, up) / area > 0.5 && facing / area > 0.95) return 'top';
             if (Math.hypot(...mean) / area > 0.985) return 'planar';
             const ev = eigSym3(C).values;
             return ev[0] / (ev[0] + ev[1] + ev[2]) < 0.02 ? 'cylinder' : 'conformal';
@@ -1011,20 +1021,28 @@
         };
 
         // 展開選取曲面；回傳每個三角形的 UV（mm，平面上 Y 朝下，3D 的「上」對應畫面上方）
-        const unwrapPatch = (model, tris, method, up = [0, 0, 1]) => {
+        const unwrapPatch = (model, tris, method, up = [0, 0, 1], maxSlope = 90) => {
+            let skipped = 0;
+            if (method === 'top') {
+                // 上視圖只用朝向多數那一側（朝上或整片朝下皆可）且坡度不超過 maxSlope 的面；更陡的牆面與倒勾維持實心，孔才不會被拉成長條
+                const { mean, area } = normalCovariance(model, tris);
+                const sgn = v3.dot(mean, up) < 0 ? -1 : 1, cosM = Math.cos(maxSlope * Math.PI / 180) - 1e-9;
+                const kept = tris.filter(t => sgn * (model.fn[t * 3] * up[0] + model.fn[t * 3 + 1] * up[1] + model.fn[t * 3 + 2] * up[2]) >= cosM);
+                let ka = 0; kept.forEach(t => { ka += model.fa[t]; });
+                if (!kept.length || !(ka > 1e-9 * area)) return null;
+                skipped = 1 - ka / area; tris = kept;
+            }
             const local = new Map(); const verts = []; const lt = new Uint32Array(tris.length * 3);
             tris.forEach((t, i) => { for (let k = 0; k < 3; k++) { const v = model.vIndex[t * 3 + k]; let l = local.get(v); if (l === undefined) { l = verts.length; local.set(v, l); verts.push(v); } lt[i * 3 + k] = l; } });
             const n = verts.length; const P = new Float64Array(n * 3);
             verts.forEach((v, l) => { P[l * 3] = model.vPos[v * 3]; P[l * 3 + 1] = model.vPos[v * 3 + 1]; P[l * 3 + 2] = model.vPos[v * 3 + 2]; });
             const pt = (l) => [P[l * 3], P[l * 3 + 1], P[l * 3 + 2]];
             const { C, mean, area } = normalCovariance(model, tris);
-            const uv = new Float32Array(tris.length * 6); let fallback = false, away = 0, solver = null;
+            const uv = new Float32Array(tris.length * 6); let fallback = false, solver = null;
             if (method === 'top') {
                 // 上視圖投影：平面座標就是模型的上視圖（X 向右、往上看為畫面上方），孔沿 up 軸垂直投影到曲面
                 const [R, U] = viewBasis(up);
                 for (let i = 0; i < tris.length; i++) for (let k = 0; k < 3; k++) { const p = pt(lt[i * 3 + k]); uv[i * 6 + k * 2] = v3.dot(p, R); uv[i * 6 + k * 2 + 1] = -v3.dot(p, U); }
-                tris.forEach(t => { if (model.fn[t * 3] * up[0] + model.fn[t * 3 + 1] * up[1] + model.fn[t * 3 + 2] * up[2] <= 0.05) away += model.fa[t]; });
-                away /= area;
             } else if (method === 'cylinder') {
                 let A = eigSym3(C).vectors[0];
                 const au = v3.dot(A, up);
@@ -1074,7 +1092,7 @@
                 }
                 for (let i = 0; i < tris.length; i++) for (let k = 0; k < 3; k++) { const l = lt[i * 3 + k]; uv[i * 6 + k * 2] = U[l * 2]; uv[i * 6 + k * 2 + 1] = U[l * 2 + 1]; }
             }
-            return { ...buildUVPatch(model, tris, uv), method: fallback ? 'planar' : method, fallback, solver, projected: method === 'top', away, up };
+            return { ...buildUVPatch(model, tris, uv), method: fallback ? 'planar' : method, fallback, solver, projected: method === 'top', skipped, maxSlope, up };
         };
 
         // 平面座標 → 所在三角形與重心座標
@@ -1234,7 +1252,7 @@
                             const r = el.getBoundingClientRect();
                             s.ray.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), camera);
                             const hit = s.ray.intersectObject(s.pickMesh, false)[0];
-                            if (hit) onPickRef.current(hit.faceIndex, e.shiftKey);
+                            onPickRef.current(hit ? hit.faceIndex : -1, e.shiftKey);
                         }
                         if (ptrs.size === 0) drag = null;
                     };
@@ -1267,9 +1285,13 @@
                 if (s.pickMesh) { s.root.remove(s.pickMesh); s.pickMesh.geometry.dispose(); s.pickMesh = null; }
                 s.model = model;
                 s.root.rotation.x = upAxis === 'y' ? 0 : -Math.PI / 2;
+                // 法線朝內的模型：材質色畫在背面、暗色畫在正面，外側看起來才是材質
+                const flip = !!model?.inward;
+                for (const [k, outer] of [['bodyMat', 1], ['patchMat', 1], ['bodyBack', 0], ['patchBack', 0]]) { s[k].side = (outer ? !flip : flip) ? THREE.FrontSide : THREE.BackSide; s[k].needsUpdate = true; }
                 if (model) {
                     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(model.tri, 3));
-                    s.pickMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial()); s.pickMesh.visible = false; s.root.add(s.pickMesh);
+                    // 雙面：法線朝下（或整個翻轉）的 STL 從上方點也要點得到
+                    s.pickMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); s.pickMesh.visible = false; s.root.add(s.pickMesh);
                     s.fit();
                 }
                 s.render();
@@ -1379,6 +1401,8 @@
             const [modelSrc, setModelSrc] = useState(null);
             const [unit, setUnit] = useState('mm');
             const [crease, setCrease] = useState(30);
+            // 上視圖投影的最大坡度：更陡的面不開孔
+            const [maxSlope, setMaxSlope] = useState(60);
             const [seeds, setSeeds] = useState([]);
             // 平面面板預設就是零件的上視圖
             const [unwrapMode, setUnwrapMode] = useState('top');
@@ -1399,8 +1423,10 @@
             const uvPatch = useMemo(() => {
                 if (!mode3D || !model || !patchTris) return null;
                 const up = upAxis === 'y' ? [0, 1, 0] : [0, 0, 1];
-                return unwrapPatch(model, patchTris, unwrapMode === 'auto' ? chooseUnwrap(model, patchTris, up) : unwrapMode, up);
-            }, [mode3D, model, patchTris, unwrapMode, upAxis]);
+                return unwrapPatch(model, patchTris, unwrapMode === 'auto' ? chooseUnwrap(model, patchTris, up) : unwrapMode, up, maxSlope);
+            }, [mode3D, model, patchTris, unwrapMode, upAxis, maxSlope]);
+            // 選了曲面但上視圖找不到夠平的面
+            const slopeBlocked = mode3D && !!patchTris && !uvPatch;
             const loadSample = (key) => { setModelSrc({ tri: SAMPLES[key].make(), name: SAMPLES[key].name }); setUnit('mm'); setUpAxis('z'); setSeeds([SAMPLES[key].seed]); fittedRef.current = false; };
             useEffect(() => { if (mode3D && !modelSrc) loadSample('panel'); }, [mode3D]);
 
@@ -2129,6 +2155,7 @@
             // 點選曲面：一般點選 = 只選這一面；Shift = 加入或移除
             const onPick = (t, shift) => {
                 if (!model) return;
+                if (t < 0) { notify('Click on the model itself to pick a surface'); return; }
                 fittedRef.current = false;
                 if (!shift) { setSeeds([t]); return; }
                 const i = seeds.findIndex(sd => growPatch(model, sd, crease).includes(t));
@@ -2277,7 +2304,7 @@
             // 投影時面積比 = cos(坡度)，孔在斜面上沿坡度方向拉長 1/cos 倍
             const slopeStretch = uvPatch?.projected ? Math.round((1 / Math.max(1 + uvPatch.stretch[0], 0.01) - 1) * 100) : 0;
             const surfaceText = !uvPatch ? '' : uvPatch.projected
-                ? `${surfaceHead}, projected from the top view: rows are laid out in plan and each hole drops straight down onto the surface. ${slopeStretch >= 1 ? `On the model, holes on the steepest slopes stretch up to ${slopeStretch}% along the slope.` : 'The surface is flat from above, so holes keep their shape.'}${uvPatch.away > 0.02 ? ' Part of this surface faces sideways or down, so holes there smear; select only the upward-facing part, or use Cylinder or BFF for sides.' : ''}`
+                ? `${surfaceHead}, projected from the top view: rows are laid out in plan and each hole drops straight down onto the surface. ${slopeStretch >= 1 ? `On the model, holes on the steepest slopes stretch up to ${slopeStretch}% along the slope.` : 'The surface is flat from above, so holes keep their shape.'}${uvPatch.skipped > 0.005 ? ` Faces steeper than ${fmt(uvPatch.maxSlope, 0)}° (${fmt(uvPatch.skipped * 100, 0)}% of the surface) stay solid; raise Max slope to perforate them, or use Cylinder or BFF for walls.` : ''}`
                 : `${surfaceHead}, ${uvPatch.solver === 'bff' ? 'flattened with Boundary First Flattening (conformal, boundary lengths kept, least area distortion)'
                     : uvPatch.solver === 'lscm' ? 'flattened conformally with LSCM, because Boundary First Flattening needs a surface with a single outer edge'
                     : `unwrapped ${UNWRAPS.find(u => u.value === uvPatch.method).label.toLowerCase()}${uvPatch.fallback ? ' (BFF is limited to 30,000 vertices)' : ''}`}. Area stretch ${pct(uvPatch.stretch[0])} to ${pct(uvPatch.stretch[1])}${Math.max(Math.abs(uvPatch.stretch[0]), Math.abs(uvPatch.stretch[1])) > 0.1 ? ', so holes will look distorted on the model; try another unwrap method or a smaller surface' : ''}.`;
@@ -2336,7 +2363,8 @@
                                 </div>
                                 <Param id="crease" label="Split angle" value={crease} min={5} max={90} step={1} decimals={0} unit="°" onChange={setCrease} />
                                 <div className="param"><span className="param-label">Unwrap</span><Segmented label="Unwrap method" inline tight options={UNWRAPS} value={unwrapMode} onChange={setUnwrapMode} /></div>
-                                <p className="hint">{uvPatch ? surfaceText : 'Click a surface in the 3D view to apply the pattern. The model is split wherever neighbouring faces bend more than the split angle. Shift-click adds or removes surfaces.'}</p>
+                                {(unwrapMode === 'top' || uvPatch?.projected) && <Param id="maxslope" label="Max slope" value={maxSlope} min={10} max={85} step={1} decimals={0} unit="°" onChange={setMaxSlope} />}
+                                <p className="hint">{uvPatch ? surfaceText : slopeBlocked ? `Every face of this surface is steeper than ${fmt(maxSlope, 0)}° from above, so the top view has nowhere to put holes. Raise Max slope, or use Cylinder or BFF for walls.` : 'Click a surface in the 3D view to apply the pattern. The model is split wherever neighbouring faces bend more than the split angle. Shift-click adds or removes surfaces.'}</p>
                                 {seeds.length > 0 && <div><button className="btn-ghost" onClick={() => setSeeds([])}><Icon name="x" size={14} />Clear selection</button></div>}
                             </Section>}
 
@@ -2498,7 +2526,7 @@
                                     </>}
                                 </div>
 
-                                {mode3D && !uvPatch && <div className="overlay pane-msg-2d">Select a surface in the 3D view to unwrap it here.</div>}
+                                {mode3D && !uvPatch && <div className="overlay pane-msg-2d">{slopeBlocked ? 'This surface is too steep for the top view. Raise Max slope or pick another unwrap.' : 'Select a surface in the 3D view to unwrap it here.'}</div>}
                                 {toast && <div key={toast.id} className="toast" role="status">{toast.msg}</div>}
                             </div>
                           </div>

@@ -137,6 +137,10 @@
         .guide-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line-strong); }
         .guide-table td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
         .guide-table td:first-child { white-space: nowrap; font-weight: 500; }
+        .bump { display: block; width: 100%; height: 64px; margin: 2px 0 12px; border-radius: 8px; background: var(--tonal); }
+        .bump-fill { fill: var(--tonal-hover); }
+        .bump-line { fill: none; stroke: var(--fg); stroke-width: 1.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+        .bump-edge { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
         kbd { font: 500 11px var(--font-mono); padding: 1px 5px; border-radius: 4px; background: var(--tonal); box-shadow: inset 0 0 0 1px var(--line-strong); white-space: nowrap; }
         @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
@@ -332,6 +336,7 @@
             bCX: 0, bCY: 0, bRad: 60,
             quadPts: [ {x: -100, y: -50}, {x: 100, y: -50}, {x: 120, y: 50}, {x: -120, y: 50} ],
             influenceRange: 35, attractorRadius: 60, falloff: 1.0,
+            dispProfile: 'round', dispWidth: 0.5, dispAlign: 'inside', dispBlur: 0, dispPolarity: 'raised', dispRes: 10,
             attractorX: 0, attractorY: 0, attractorLock: false,
             rotation: 0, mirrorCount: 6,
             patternX: 0, patternY: 0, scaleHoles: true,
@@ -347,7 +352,11 @@
             // 圖案目前配合的 3D 曲面外框 {cx, cy, w, h}；null = 配合 2D 面板
             fitFrame: null
         };
-        const ENUMS = { patternType: PATTERNS, attractorMode: FIELDS, boundaryShape: SHAPES, trimTarget: TRIMS, holeShape: HOLE_SHAPES, holeOrient: ORIENTS, holeAlt: ALTS };
+        // 位移圖：邊緣輪廓、邊緣帶的位置、孔凸起或凹下
+        const DISP_PROFILES = [{ value: 'round', label: 'Round' }, { value: 'smooth', label: 'Smooth' }, { value: 'chamfer', label: 'Chamfer' }, { value: 'cove', label: 'Cove' }];
+        const DISP_ALIGNS = [{ value: 'inside', label: 'Inside' }, { value: 'center', label: 'Centred' }, { value: 'outside', label: 'Outside' }];
+        const DISP_POLARITY = [{ value: 'raised', label: 'Raised' }, { value: 'recessed', label: 'Recessed' }];
+        const ENUMS = { patternType: PATTERNS, attractorMode: FIELDS, boundaryShape: SHAPES, trimTarget: TRIMS, holeShape: HOLE_SHAPES, holeOrient: ORIENTS, holeAlt: ALTS, dispProfile: DISP_PROFILES, dispAlign: DISP_ALIGNS, dispPolarity: DISP_POLARITY };
 
         // 讀入的設計檔（或 localStorage）只取已知欄位並檢查型別，缺的補預設值
         const sanitizeDesign = (raw) => {
@@ -539,6 +548,7 @@
                                     <li><b>Hole shape</b>: Round, Slot, Ellipse, Rect, Hex or Tri, with Length, Tilt, orientation (Fixed, Follow field, Radial), Field twist and Alternate rows.</li>
                                     <li><b>Boundary</b>: Rect, Circle or Quad. Drag the red handles, choose Trim dots or Trim curves, and set an Edge margin.</li>
                                     <li><b>Analysis</b> (top right): hole count, open area, minimum web and mass. <b>Fix</b> resolves holes or webs too small to manufacture.</li>
+                                    <li><b>Displacement</b>: to use the pattern as a height or displacement map, choose the edge profile (Round, Smooth, Chamfer, Cove), Edge width, where the edge sits and Blur. Switch the view to <b>Height</b> to see it; in 3D it shows as relief on the part.</li>
                                 </ol>
                             </section>
                             <section id="g-3d">
@@ -577,6 +587,7 @@
                                         <tr><td>3D hole table (CSV)</td><td>Position, surface normal, axis and cutting direction of every hole in the model’s coordinates, for Rhino or Grasshopper.</td></tr>
                                         <tr><td>Unwrapped surface / Rest of the part (OBJ)</td><td>The selected surface with its UVs, and everything else, as two meshes that line up.</td></tr>
                                         <tr><td>UV map (PNG / SVG)</td><td>The unwrapped layout with mesh, outline and holes, matching the OBJ UVs.</td></tr>
+                                        <tr><td>Displacement map (PNG)</td><td>A 16-bit grayscale height map (white = high) with the edge profile from Displacement. In 3D it covers the same square as the UV map, so it drops straight onto the OBJ.</td></tr>
                                         <tr><td>PNG preview</td><td>A high-resolution render of the current view.</td></tr>
                                     </tbody>
                                 </table>
@@ -591,7 +602,7 @@
                                         <tr><td><kbd>F</kbd></td><td>Fit the view</td></tr>
                                         <tr><td><kbd>+</kbd> <kbd>−</kbd></td><td>Zoom in and out (or scroll; drag the empty canvas to pan)</td></tr>
                                         <tr><td><kbd>H</kbd></td><td>Show or hide the guides and handles</td></tr>
-                                        <tr><td><kbd>M</kbd></td><td>Switch between Drawing and Material view</td></tr>
+                                        <tr><td><kbd>M</kbd></td><td>Cycle the Drawing, Material and Height views</td></tr>
                                         <tr><td><kbd>Esc</kbd></td><td>Close a menu or this guide; in 3D, clear the selection</td></tr>
                                         <tr><td><kbd>?</kbd></td><td>Open this guide</td></tr>
                                     </tbody>
@@ -2799,8 +2810,116 @@
             return loc.map(([lx, ly]) => { const ox = lx * ux - ly * uy, oy = lx * uy + ly * ux; return [d.x + p * ox + q * oy, d.y + q * ox + r * oy]; });
         };
 
+        // ---------- 位移圖（高度圖） ----------
+        // 孔的邊緣輪廓：t 從邊緣起點 0 到頂部 1；Round = 凸圓角、Cove = 凹圓角、Smooth = S 形、Chamfer = 直線倒角
+        const profileAt = (kind, t) => kind === 'chamfer' ? t : kind === 'smooth' ? t * t * (3 - 2 * t) : kind === 'cove' ? 1 - Math.sqrt(Math.max(0, 1 - t * t)) : Math.sqrt(Math.max(0, 1 - (1 - t) * (1 - t)));
+        // d：到孔邊緣的有號距離（mm，孔內為正）；邊緣帶可在輪廓內側、置中或外側
+        const edgeT = (d, w, align) => { if (!(w > 0)) return d > 0 ? 1 : 0; const d0 = align === 'outside' ? -w : align === 'center' ? -w / 2 : 0; return clamp((d - d0) / w, 0, 1); };
+        // 一維平方距離轉換（Felzenszwalb & Huttenlocher）
+        const edt1d = (f, n, d, v, z) => {
+            let k = 0; v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
+            for (let q = 1; q < n; q++) {
+                let s2 = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+                while (s2 <= z[k]) { k--; s2 = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]); }
+                k++; v[k] = q; z[k] = s2; z[k + 1] = Infinity;
+            }
+            k = 0;
+            for (let q = 0; q < n; q++) { while (z[k + 1] < q) k++; d[q] = (q - v[k]) * (q - v[k]) + f[v[k]]; }
+        };
+        // 每個像素到最近「種子」像素的平方距離（像素）
+        const sqDistance = (seed, W, H) => {
+            const out = new Float32Array(W * H), n = Math.max(W, H), f = new Float64Array(n), d = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1);
+            for (let x = 0; x < W; x++) { for (let y = 0; y < H; y++) f[y] = seed[y * W + x] ? 0 : 1e20; edt1d(f, H, d, v, z); for (let y = 0; y < H; y++) out[y * W + x] = d[y]; }
+            for (let y = 0; y < H; y++) { const o = y * W; for (let x = 0; x < W; x++) f[x] = out[o + x]; edt1d(f, W, d, v, z); for (let x = 0; x < W; x++) out[o + x] = d[x]; }
+            return out;
+        };
+        // 高斯模糊的近似：三次方框模糊（每次 O(N)，與半徑無關）
+        const boxBlur = (src, W, H, sigma) => {
+            if (!(sigma > 0.3)) return src;
+            const wIdeal = Math.sqrt(12 * sigma * sigma / 3 + 1); let wl = Math.floor(wIdeal); if (wl % 2 === 0) wl--;
+            const m = Math.round((12 * sigma * sigma - 3 * wl * wl - 12 * wl - 9) / (-4 * wl - 4)), sizes = [0, 1, 2].map(i => i < m ? wl : wl + 2);
+            let a = Float32Array.from(src), b = new Float32Array(W * H);
+            const pass = (from, to, r, horiz) => {
+                const L = horiz ? W : H, N = horiz ? H : W, st = horiz ? 1 : W, step = horiz ? W : 1, iarr = 1 / (r + r + 1);
+                for (let j = 0; j < N; j++) {
+                    const o = j * step; let ti = o, li = o, ri = o + r * st; const fv = from[o], lv = from[o + (L - 1) * st]; let val = (r + 1) * fv;
+                    for (let k = 0; k < r; k++) val += from[o + Math.min(k, L - 1) * st];
+                    for (let k = 0; k < L; k++) { const rIdx = k + r < L ? from[o + (k + r) * st] : lv, lIdx = k - r - 1 >= 0 ? from[o + (k - r - 1) * st] : fv; val += rIdx - lIdx; to[ti] = val * iarr; ti += st; }
+                }
+            };
+            for (const sz of sizes) { const r = (sz - 1) / 2; if (r < 1) continue; pass(a, b, r, true); pass(b, a, r, false); }
+            return a;
+        };
+        // 高度場：frame（mm）上每 mm k 像素；孔 = 1（Raised）或 0（Recessed），板面 = 0
+        const heightField = (dots, frame, k, P, shape, corner, clipSheet) => {
+            const W = Math.max(1, Math.round(frame.w * k)), H = Math.max(1, Math.round(frame.h * k));
+            const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+            const ctx = cv.getContext('2d', { willReadFrequently: true });
+            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+            ctx.save(); clipSheet?.(ctx); ctx.fillStyle = '#fff'; ctx.beginPath(); // 板材外（Trim curves 切到的孔）不算孔
+            dots.forEach(d => traceHolePath(ctx, d, x => (x - frame.x0) * k, y => (y - frame.y0) * k, k, shape, corner)); ctx.fill();
+            ctx.restore();
+            const px = ctx.getImageData(0, 0, W, H).data, N = W * H, a = new Float32Array(N), inS = new Uint8Array(N), outS = new Uint8Array(N);
+            for (let i = 0; i < N; i++) { a[i] = px[i * 4] / 255; if (a[i] >= 0.5) inS[i] = 1; else outS[i] = 1; }
+            const dIn = sqDistance(inS, W, H), dOut = sqDistance(outS, W, H);
+            const w = Math.max(0, P.dispWidth), h = new Float32Array(N);
+            for (let i = 0; i < N; i++) {
+                // 有號距離（像素）：反鋸齒的邊緣像素用覆蓋率補上次像素精度
+                let sd = inS[i] ? Math.sqrt(dOut[i]) - 0.5 : 0.5 - Math.sqrt(dIn[i]);
+                if (a[i] > 0.002 && a[i] < 0.998) sd = a[i] - 0.5;
+                h[i] = profileAt(P.dispProfile, edgeT(sd / k, w, P.dispAlign));
+            }
+            const out = boxBlur(h, W, H, Math.max(0, P.dispBlur) * k);
+            if (P.dispPolarity === 'recessed') for (let i = 0; i < N; i++) out[i] = 1 - out[i];
+            return { W, H, h: out };
+        };
+        const heightCanvas = (hf) => {
+            const cv = document.createElement('canvas'); cv.width = hf.W; cv.height = hf.H;
+            const ctx = cv.getContext('2d'), img = ctx.createImageData(hf.W, hf.H), dd = img.data;
+            for (let i = 0; i < hf.h.length; i++) { const g = Math.round(clamp(hf.h[i], 0, 1) * 255); dd[i * 4] = dd[i * 4 + 1] = dd[i * 4 + 2] = g; dd[i * 4 + 3] = 255; }
+            ctx.putImageData(img, 0, 0); return cv;
+        };
+        // 16 位元灰階 PNG（位移圖不會出現 8 位元的階梯）；瀏覽器沒有 CompressionStream 時回傳 null
+        const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+        const png16 = async (hf) => {
+            if (typeof CompressionStream === 'undefined') return null;
+            const { W, H, h } = hf, row = W * 2 + 1, raw = new Uint8Array(row * H);
+            for (let y = 0; y < H; y++) {
+                raw[y * row] = 1; // Sub 濾波：平滑的漸層壓得比較小
+                let pv = 0;
+                for (let x = 0; x < W; x++) { const v = Math.round(clamp(h[y * W + x], 0, 1) * 65535), o = y * row + 1 + x * 2; raw[o] = ((v >> 8) - (pv >> 8)) & 255; raw[o + 1] = ((v & 255) - (pv & 255)) & 255; pv = v; }
+            }
+            const z = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
+            const chunk = (type, data) => {
+                const out = new Uint8Array(12 + data.length), dv = new DataView(out.buffer);
+                dv.setUint32(0, data.length); for (let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i); out.set(data, 8);
+                let c = 0xffffffff; for (let i = 4; i < 8 + data.length; i++) c = CRC_TABLE[(c ^ out[i]) & 255] ^ (c >>> 8);
+                dv.setUint32(8 + data.length, (c ^ 0xffffffff) >>> 0); return out;
+            };
+            const ihdr = new Uint8Array(13), dv = new DataView(ihdr.buffer); dv.setUint32(0, W); dv.setUint32(4, H); ihdr[8] = 16; ihdr[9] = 0;
+            return new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', z), chunk('IEND', new Uint8Array(0))], { type: 'image/png' });
+        };
+        // 邊緣輪廓的剖面示意：一個典型孔（半徑 R）的高度，橫軸 mm
+        const BumpProfile = ({ P, radius }) => {
+            const w = Math.max(0, P.dispWidth), R = Math.max(radius, 0.05), span = R + Math.max(w, R * 0.4) * 1.25 + P.dispBlur * 2, n = 160;
+            const xs = Array.from({ length: n + 1 }, (_, i) => -span + 2 * span * i / n);
+            let hs = xs.map(x => profileAt(P.dispProfile, edgeT(R - Math.abs(x), w, P.dispAlign)));
+            const sg = Math.max(0, P.dispBlur) / (2 * span / n);
+            if (sg > 0.3) { const r = Math.ceil(sg * 3), ker = Array.from({ length: 2 * r + 1 }, (_, i) => Math.exp(-((i - r) ** 2) / (2 * sg * sg))), ks = ker.reduce((a, b) => a + b, 0); hs = hs.map((_, i) => ker.reduce((acc, kv, j) => acc + kv * hs[clamp(i + j - r, 0, n)], 0) / ks); }
+            if (P.dispPolarity === 'recessed') hs = hs.map(v => 1 - v);
+            const VW = 280, VH = 64, X = (x) => (x + span) / (2 * span) * VW, Y = (v) => VH - 6 - v * (VH - 14);
+            const line = xs.map((x, i) => `${i ? 'L' : 'M'}${X(x).toFixed(1)} ${Y(hs[i]).toFixed(1)}`).join('');
+            return (
+                <svg className="bump" viewBox={`0 0 ${VW} ${VH}`} role="img" aria-label="Cross-section of one hole in the displacement map">
+                    <path className="bump-fill" d={`${line}L${VW} ${VH}L0 ${VH}Z`} />
+                    <path className="bump-line" d={line} />
+                    <line className="bump-edge" x1={X(-R)} x2={X(-R)} y1={4} y2={VH} /><line className="bump-edge" x1={X(R)} x2={X(R)} y1={4} y2={VH} />
+                </svg>
+            );
+        };
+
         // 3D 檢視：three.js 場景與軌道相機；點選曲面；穿孔以較深的同材質顯示（不鏤空）
-        const Viewport3D = ({ model, labels, selectedIds, splitGeom, showMesh, upAxis, patch, dots, holeShape, holeCorner, finishKey, finish, guides, bg, onPick, apiRef }) => {
+        const Viewport3D = ({ model, labels, selectedIds, splitGeom, showMesh, upAxis, patch, dots, holeShape, holeCorner, finishKey, finish, guides, bg, onPick, apiRef, heightMap }) => {
             const glRef = useRef(null);
             const tipRef = useRef(null);
             const labelsRef = useRef(labels); labelsRef.current = labels;
@@ -2954,7 +3073,7 @@
                 }).catch(() => { if (!dead) setStatus('error'); });
                 return () => {
                     dead = true; const s = st.current;
-                    cancelAnimationFrame(s.texFrame); s.ro?.disconnect(); s.tex?.dispose(); s.renderer?.dispose(); s.renderer?.domElement.remove();
+                    cancelAnimationFrame(s.texFrame); s.ro?.disconnect(); s.tex?.dispose(); s.bump?.dispose(); s.renderer?.dispose(); s.renderer?.domElement.remove();
                 };
             }, []);
 
@@ -3036,10 +3155,17 @@
                     ctx.fill();
                     const tex = new THREE.CanvasTexture(cv); tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); tex.encoding = THREE.sRGBEncoding;
                     s.tex?.dispose(); s.tex = tex;
-                    for (const m of [s.patchMat, s.patchBack]) { m.map = tex; m.needsUpdate = true; }
+                    // Height 檢視：改以高度圖做凹凸貼圖（浮雕），不再把孔塗暗；高度圖的範圍若和曲面不同就以 repeat／offset 對齊
+                    s.bump?.dispose(); s.bump = null;
+                    if (heightMap) {
+                        const f = heightMap.frame, bt = new THREE.CanvasTexture(heightMap.canvas);
+                        bt.repeat.set(W / f.w, H / f.h); bt.offset.set((b.minX - f.x0) / f.w, 1 - (b.minY - f.y0 + H) / f.h); bt.anisotropy = tex.anisotropy;
+                        s.bump = bt;
+                    }
+                    for (const m of [s.patchMat, s.patchBack]) { m.map = heightMap ? null : tex; m.bumpMap = s.bump; m.bumpScale = 3; m.needsUpdate = true; }
                     s.render();
                 });
-            }, [status, patch, dots, holeShape, holeCorner]);
+            }, [status, patch, dots, holeShape, holeCorner, heightMap]);
 
             useEffect(() => {
                 if (status !== 'ready') return;
@@ -3104,8 +3230,8 @@
             const guideLinkRef = useRef(null);
             const closeGuide = () => { setGuideOpen(false); guideLinkRef.current?.focus(); };
             const [params, setParams] = useState(() => sanitizeDesign(stored.design));
-            const [view, setView] = useState(() => ({ zoom: 4, panX: 0, panY: 0, mode: stored.mode === 'material' ? 'material' : 'drawing', guides: stored.guides !== false }));
-            const [openSections, setOpenSections] = useState(() => ({ model: true, tess: true, split: true, unwrap: true, array: true, holes: true, shape: true, boundary: true, material: false, reference: true, ...(stored.sections || {}) }));
+            const [view, setView] = useState(() => ({ zoom: 4, panX: 0, panY: 0, mode: ['material', 'height'].includes(stored.mode) ? stored.mode : 'drawing', guides: stored.guides !== false }));
+            const [openSections, setOpenSections] = useState(() => ({ model: true, tess: true, split: true, unwrap: true, array: true, holes: true, shape: true, boundary: true, material: false, disp: true, reference: true, ...(stored.sections || {}) }));
             const [cardOpen, setCardOpen] = useState(() => window.innerWidth >= 768);
             const [bgImage, setBgImage] = useState(null);
             const [canvasDim, setCanvasDim] = useState({ w: 0, h: 0 });
@@ -3113,6 +3239,8 @@
             const [hoverHighlight, setHoverHighlight] = useState('none');
             const [menu, setMenu] = useState(null);
             const [toast, setToast] = useState(null);
+            // 高度圖預覽（Height 檢視與 3D 浮雕共用）：{ canvas, frame }
+            const [heightPreview, setHeightPreview] = useState(null);
             const [themeTick, setThemeTick] = useState(0);
             const [, setHistTick] = useState(0);
 
@@ -3581,8 +3709,9 @@
                 const cx = w / 2 + view.panX; const cy = h / 2 + view.panY;
                 const zoom = view.zoom;
                 const X = (x) => cx + x * zoom; const Y = (y) => cy + y * zoom;
-                const material = view.mode === 'material';
+                const material = view.mode === 'material', heightView = view.mode === 'height';
                 const finish = FINISHES[params.finish] || FINISHES.aluminium;
+                const recessed = params.dispPolarity === 'recessed';
                 const handle = (x, y, color, r = 5, lw = 2) => {
                     ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X(x), Y(y), r, 0, Math.PI*2); ctx.fill();
                     ctx.strokeStyle = 'white'; ctx.lineWidth = lw; ctx.stroke();
@@ -3614,7 +3743,7 @@
                 const sb = getBounds();
                 ctx.save();
                 if (material) { ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6; }
-                else { ctx.fillStyle = params.bgColor; ctx.shadowColor = 'rgba(0,0,0,0.08)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 1; }
+                else { ctx.fillStyle = heightView ? (recessed ? '#fff' : '#000') : params.bgColor; ctx.shadowColor = 'rgba(0,0,0,0.08)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 1; }
                 if (uvMode) inWorld(() => { if (material) ctx.fillStyle = sheetGrad(sb.minX, sb.minY, sb.maxX, sb.maxY); ctx.fill(uvPatch.fillPath, uvPatch.fillRule); });
                 else { if (material) ctx.fillStyle = sheetGrad(X(sb.minX), Y(sb.minY), X(sb.maxX), Y(sb.maxY)); traceBoundary(); ctx.fill(); }
                 ctx.restore();
@@ -3633,8 +3762,17 @@
                     if (uvMode) { ctx.transform(zoom, 0, 0, zoom, cx, cy); ctx.clip(uvPatch.fillPath, uvPatch.fillRule); ctx.transform(1 / zoom, 0, 0, 1 / zoom, -cx / zoom, -cy / zoom); }
                     else { traceBoundary(); ctx.clip(); }
                 }
-                ctx.fillStyle = material ? finish.hole : params.color;
-                ctx.beginPath(); dots.forEach(d => traceHolePath(ctx, d, X, Y, zoom, shape, params.holeCorner)); ctx.fill();
+                // Height 檢視：畫上高度圖（白 = 高），裁切在板材內；預覽還沒算好時先畫一般的孔
+                const hp = heightView && heightPreview;
+                if (hp) {
+                    if (uvMode) { ctx.transform(zoom, 0, 0, zoom, cx, cy); ctx.clip(uvPatch.fillPath, uvPatch.fillRule); ctx.transform(1 / zoom, 0, 0, 1 / zoom, -cx / zoom, -cy / zoom); }
+                    else { traceBoundary(); ctx.clip(); }
+                    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(hp.canvas, X(hp.frame.x0), Y(hp.frame.y0), hp.frame.w * zoom, hp.frame.h * zoom);
+                } else {
+                    ctx.fillStyle = heightView ? (recessed ? '#000' : '#fff') : material ? finish.hole : params.color;
+                    ctx.beginPath(); dots.forEach(d => traceHolePath(ctx, d, X, Y, zoom, shape, params.holeCorner)); ctx.fill();
+                }
                 ctx.restore();
 
                 if (view.guides) {
@@ -4070,6 +4208,21 @@
                 ctx.fillStyle = '#111'; ctx.beginPath(); dots.forEach(d => traceHolePath(ctx, d, Xp, Yp, k, params.holeShape, params.holeCorner)); ctx.fill();
                 cv.toBlob(blob => blob ? deliver(`${fileBase()}-uvmap.png`, blob, 'UV map') : notify('Couldn’t render the UV map'), 'image/png');
             };
+            // 位移圖：16 位元灰階 PNG。3D 時取 UV map 的正方形（與 OBJ 的 UV 對齊），2D 時取外框範圍，1:1 依 px/mm
+            const exportHeightMap = () => {
+                setMenu(null);
+                const b = getBounds(), sq = mode3D && uvPatch ? uvSquare() : null;
+                const frame = sq ? { x0: sq.x0, y0: sq.y0, w: sq.S, h: sq.S } : { x0: b.minX, y0: b.minY, w: Math.max(b.maxX - b.minX, 1e-6), h: Math.max(b.maxY - b.minY, 1e-6) };
+                const MAX_PX = 12e6; let k = params.dispRes;
+                if (frame.w * frame.h * k * k > MAX_PX) k = Math.sqrt(MAX_PX / (frame.w * frame.h));
+                notify('Rendering the displacement map…');
+                setTimeout(async () => {
+                    const hf = heightField(dots, frame, k, params, params.holeShape, params.holeCorner, sheetClip(frame, k));
+                    const blob = await png16(hf) || await new Promise(r => heightCanvas(hf).toBlob(r, 'image/png'));
+                    if (!blob) { notify('Couldn’t render the displacement map'); return; }
+                    deliver(`${fileBase()}-height.png`, blob, `Displacement map ${hf.W} × ${hf.H} px${k < params.dispRes - 1e-9 ? ` (reduced to ${fmt(k, 1)} px/mm)` : ''}`);
+                }, 30);
+            };
 
             // STL（網格）或 IGES（NURBS 面）
             const handleModelFile = (e) => {
@@ -4199,7 +4352,7 @@
                     else if (mod || e.altKey) return;
                     else if (key === 'f') { fitView(); viewApi.current?.fit(); }
                     else if (key === 'h') setView(v => ({ ...v, guides: !v.guides }));
-                    else if (key === 'm') setView(v => ({ ...v, mode: v.mode === 'material' ? 'drawing' : 'material' }));
+                    else if (key === 'm') setView(v => ({ ...v, mode: v.mode === 'drawing' ? 'material' : v.mode === 'material' ? 'height' : 'drawing' }));
                     else if (key === '=' || key === '+') zoomBy(1.25);
                     else if (key === '-') zoomBy(0.8);
                     else if (key === 'escape') { if (menu) setMenu(null); else if (mode3D && seeds.length) setSeeds([]); }
@@ -4233,6 +4386,25 @@
                 const dots = mode3D && uvPatch && trueSize ? raw.map(d => { const hit = uvLocate(uvPatch, d.x, d.y, 1e-4), aff = hit && holeStretch(uvPatch, hit); return aff && Math.max(Math.abs(aff[0] - 1), Math.abs(aff[1]), Math.abs(aff[2] - 1)) > 1e-3 ? { ...d, aff } : d; }) : raw;
                 return { dots, analysis: engine.analyze(dots) };
             }, [params, boundaryShape, uvPatch, trueSize, mode3D]);
+            // 板材外形的裁切路徑（frame 的像素座標）：高度圖裡板材外不算孔
+            const sheetClip = (frame, k) => (ctx) => {
+                if (boundaryShape === 'uv') { ctx.setTransform(k, 0, 0, k, -frame.x0 * k, -frame.y0 * k); ctx.clip(uvPatch.fillPath, uvPatch.fillRule); ctx.setTransform(1, 0, 0, 1, 0, 0); return; }
+                const pts = outlinePts(); ctx.beginPath();
+                if (!pts) ctx.arc((params.bCX - frame.x0) * k, (params.bCY - frame.y0) * k, params.bRad * k, 0, Math.PI * 2);
+                else pts.forEach((p, i) => i ? ctx.lineTo((p.x - frame.x0) * k, (p.y - frame.y0) * k) : ctx.moveTo((p.x - frame.x0) * k, (p.y - frame.y0) * k));
+                ctx.closePath(); ctx.clip();
+            };
+            // Height 檢視：停手約 0.1 秒後重算預覽（最長邊 1400 像素）
+            useEffect(() => {
+                if (view.mode !== 'height') { setHeightPreview(null); return; }
+                const t = setTimeout(() => {
+                    const b = getBounds(), frame = { x0: b.minX, y0: b.minY, w: Math.max(b.maxX - b.minX, 1e-6), h: Math.max(b.maxY - b.minY, 1e-6) };
+                    const k = Math.min(params.dispRes, 1400 / Math.max(frame.w, frame.h));
+                    const hf = heightField(dots, frame, k, params, params.holeShape, params.holeCorner, sheetClip(frame, k));
+                    setHeightPreview({ canvas: heightCanvas(hf), frame });
+                }, 100);
+                return () => clearTimeout(t);
+            }, [view.mode, dots, params.dispProfile, params.dispWidth, params.dispAlign, params.dispBlur, params.dispPolarity, params.dispRes]);
             const stats = useMemo(() => {
                 const area = getArea();
                 const finish = FINISHES[params.finish] || FINISHES.aluminium;
@@ -4254,7 +4426,7 @@
                 const ctx = canvas.getContext('2d', { alpha: false });
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 drawScene(ctx, canvasDim.w, canvasDim.h, dots, analysis.issues);
-            }, [dots, analysis, params, view, canvasDim, hoverHighlight, bgImage, dpr, themeTick, uvPatch]);
+            }, [dots, analysis, params, view, canvasDim, hoverHighlight, bgImage, dpr, themeTick, uvPatch, heightPreview]);
 
             const bounds = getBounds();
             const boundW = round1(bounds.maxX - bounds.minX); const boundH = round1(bounds.maxY - bounds.minY);
@@ -4363,6 +4535,7 @@
                                 { icon: 'box', label: 'Rest of the part (OBJ)', hint: 'Everything except the unwrapped surface, same coordinates', onClick: exportRestOBJ },
                                 { icon: 'grid-2x2', label: 'UV map (PNG)', hint: '4096 px texture: mesh, outline and holes, matching the OBJ UVs', onClick: exportUVMapPNG },
                                 { icon: 'pen-tool', label: 'UV map (SVG)', hint: 'The same UV layout as vectors, 1:1 mm, in layers', onClick: exportUVMapSVG }] : []),
+                            { icon: 'mountain', label: 'Displacement map (PNG)', hint: `16-bit height map, white = high, edges shaped in Displacement${uvPatch ? '; matches the OBJ UVs' : `; ${fmt(params.dispRes)} px per mm`}`, onClick: exportHeightMap },
                             '-',
                             { icon: 'image', label: 'PNG preview', hint: mode3D ? 'High-resolution render of the 3D view' : '3× render of the current view', onClick: exportPNG }
                         ]} />
@@ -4557,6 +4730,29 @@
                                     : 'Rule of thumb for punched sheet: hole width and the web between holes should be at least the sheet thickness.'} Webs between non-round holes are approximate.</p>
                             </Section>
 
+                            <Section icon="mountain" title="Displacement" summary={`${DISP_PROFILES.find(o => o.value === params.dispProfile).label} · ${fmt(params.dispWidth)} mm`} open={openSections.disp} onToggle={toggleSection('disp')}>
+                                <BumpProfile P={params} radius={Math.max(stats.maxDia, 0.1) / 2} />
+                                <Segmented label="Edge profile" inline tight options={DISP_PROFILES} value={params.dispProfile} onChange={set('dispProfile')} />
+                                <div className="row2">
+                                    <Param id="disp-width" label="Edge width" value={params.dispWidth} min={0} max={5} step={0.05} decimals={2} unit="mm" typedMax={50} onChange={set('dispWidth')} />
+                                    <Param id="disp-blur" label="Blur" value={params.dispBlur} min={0} max={5} step={0.05} decimals={2} unit="mm" typedMax={50} onChange={set('dispBlur')} />
+                                </div>
+                                <div className="param">
+                                    <span className="param-label">Edge sits</span>
+                                    <Segmented label="Edge position" inline options={DISP_ALIGNS} value={params.dispAlign} onChange={set('dispAlign')} />
+                                </div>
+                                <div className="param">
+                                    <span className="param-label">Holes are</span>
+                                    <Segmented label="Hole height" inline options={DISP_POLARITY} value={params.dispPolarity} onChange={set('dispPolarity')} />
+                                </div>
+                                <Param id="disp-res" label="Map resolution" value={params.dispRes} min={2} max={40} step={1} decimals={0} unit="px/mm" typedMax={100} onChange={set('dispRes')} />
+                                <p className="hint">White is high. Round rounds over the top edge, Cove adds a concave fillet at the base, Smooth eases both ends and Chamfer is a straight slope. Edge width is how far the slope runs {params.dispAlign === 'inside' ? 'in from' : params.dispAlign === 'outside' ? 'out from' : 'across'} the hole outline (dashed); Blur softens everything.</p>
+                                <div className="btn-row">
+                                    <button className={`btn-ghost ${view.mode === 'height' ? 'accent' : ''}`} onClick={() => setView(v => ({ ...v, mode: v.mode === 'height' ? 'drawing' : 'height' }))}><Icon name={view.mode === 'height' ? 'eye-off' : 'eye'} size={14} />{view.mode === 'height' ? 'Hide height map' : 'Preview height map'}</button>
+                                    <button className="btn-ghost" onClick={exportHeightMap}><Icon name="download" size={14} />Export PNG</button>
+                                </div>
+                            </Section>
+
                             {bgImage && <Section icon="image" title="Reference" summary={`${Math.round(params.bgOpacity * 100)}%`} open={openSections.reference} onToggle={toggleSection('reference')}>
                                 <div className="row2">
                                     <Param id="ref-opacity" label="Opacity" value={Math.round(params.bgOpacity * 100)} min={0} max={100} step={1} decimals={0} unit="%" onChange={v => set('bgOpacity')(v / 100)} />
@@ -4569,7 +4765,7 @@
 
                         <section className={`stage ${mode3D ? 'is3d' : ''}`}>
                           <div className="panes">
-                            {mode3D && <Viewport3D model={model} labels={labels} selectedIds={selectedIds} splitGeom={splitGeom} showMesh={showMesh} upAxis={upAxis} patch={uvPatch} dots={dots} holeShape={params.holeShape} holeCorner={params.holeCorner} finishKey={params.finish} finish={finish} guides={view.guides} bg={wsColor} onPick={onPick} apiRef={viewApi} />}
+                            {mode3D && <Viewport3D model={model} labels={labels} selectedIds={selectedIds} splitGeom={splitGeom} showMesh={showMesh} upAxis={upAxis} patch={uvPatch} dots={dots} holeShape={params.holeShape} holeCorner={params.holeCorner} finishKey={params.finish} finish={finish} guides={view.guides} bg={wsColor} onPick={onPick} apiRef={viewApi} heightMap={view.mode === 'height' ? heightPreview : null} />}
                             <div className="table" ref={tableRef}>
                                 {canvasDim.w > 0 && <canvas ref={canvasRef} width={Math.round(canvasDim.w * dpr)} height={Math.round(canvasDim.h * dpr)} style={{ width: canvasDim.w, height: canvasDim.h, cursor: dragMode === 'canvasPan' || dragMode === 'pinch' ? 'grabbing' : undefined }}
                                     onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
@@ -4579,6 +4775,7 @@
                                     <div className="pill" role="radiogroup" aria-label="View">
                                         <button role="radio" aria-checked={view.mode === 'drawing'} className={view.mode === 'drawing' ? 'on' : ''} title="Drawing view (M)" onClick={() => setView(v => ({ ...v, mode: 'drawing' }))}>Drawing</button>
                                         <button role="radio" aria-checked={view.mode === 'material'} className={view.mode === 'material' ? 'on' : ''} title="Material view (M)" onClick={() => setView(v => ({ ...v, mode: 'material' }))}>Material</button>
+                                        <button role="radio" aria-checked={view.mode === 'height'} className={view.mode === 'height' ? 'on' : ''} title="Height map: the displacement map with the edge profile from the Displacement section (M)" onClick={() => setView(v => ({ ...v, mode: 'height' }))}>Height</button>
                                     </div>
                                     <div className="pill">
                                         <button className={`icon ${view.guides ? '' : 'on'}`} aria-pressed={!view.guides} title={view.guides ? 'Hide guides and handles (H)' : 'Show guides and handles (H)'} onClick={() => setView(v => ({ ...v, guides: !v.guides }))}>

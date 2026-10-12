@@ -301,7 +301,7 @@
         ];
         const FIELDS = [
             { value: 'none', label: 'None', icon: 'ban' }, { value: 'radial', label: 'Radial', icon: 'target' },
-            { value: 'curve', label: 'Curve', icon: 'spline' }, { value: 'line', label: 'Line', icon: 'minus' }
+            { value: 'curve', label: 'Curve', icon: 'spline' }, { value: 'line', label: 'Line', icon: 'minus' }, { value: 'edge', label: 'Edge', icon: 'square-dashed' }
         ];
         const SHAPES = [
             { value: 'rect', label: 'Rect', icon: 'rectangle-horizontal' }, { value: 'circle', label: 'Circle', icon: 'circle' }, { value: 'quad', label: 'Quad', icon: 'square-dashed' }
@@ -325,7 +325,7 @@
             // ABS：啞光、幾乎無金屬漸層；密度約 1.04–1.06 g/cm³
             abs: { label: 'ABS', name: 'ABS plastic', sheet: ['#e3e2de', '#d3d1cc'], hole: '#1d1d1d', density: 1.05, plastic: true }
         };
-        const COLORS = { boundary: '#ef4444', curve: '#3b82f6', line: '#eab308', radial: '#10b981', splineA: '#f59e0b', splineB: '#d97706', image: '#3b82f6', pattern: '#8b5cf6' };
+        const COLORS = { edge: '#ef4444', boundary: '#ef4444', curve: '#3b82f6', line: '#eab308', radial: '#10b981', splineA: '#f59e0b', splineB: '#d97706', image: '#3b82f6', pattern: '#8b5cf6' };
         // claude.ai Artifact 的 downloads capability 接受的副檔名；其他格式打包成 zip
         const SAVE_EXTS = ['gif', 'png', 'jpg', 'jpeg', 'webp', 'mp4', 'webm', 'txt', 'json', 'md', 'csv', 'html', 'svg', 'pdf', 'zip'];
 
@@ -2843,6 +2843,21 @@
         };
         // d：到孔邊緣的有號距離（mm，孔內為正）；邊緣帶可在輪廓內側、置中或外側
         const edgeT = (d, w, align) => { if (!(w > 0)) return d > 0 ? 1 : 0; const d0 = align === 'outside' ? -w : align === 'center' ? -w / 2 : 0; return clamp((d - d0) / w, 0, 1); };
+        // 展開曲面到邊緣的距離圖（每個展開結果算一次）：把曲面外形畫成遮罩，再做距離轉換；回傳 (x, y) → 離邊緣的 mm
+        const EDGE_DEPTH = new WeakMap();
+        const uvEdgeDepth = (patch) => {
+            let m = EDGE_DEPTH.get(patch);
+            if (!m) {
+                const b = patch.bounds, PAD = 2, k = Math.min(8, 600 / Math.max(b.maxX - b.minX, b.maxY - b.minY, 1e-6));
+                const W = Math.ceil((b.maxX - b.minX) * k) + 2 * PAD, H = Math.ceil((b.maxY - b.minY) * k) + 2 * PAD;
+                const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext('2d', { willReadFrequently: true });
+                ctx.setTransform(k, 0, 0, k, PAD - b.minX * k, PAD - b.minY * k); ctx.fill(patch.fillPath, patch.fillRule);
+                const px = ctx.getImageData(0, 0, W, H).data, out = new Uint8Array(W * H);
+                for (let i = 0; i < W * H; i++) out[i] = px[i * 4 + 3] < 128 ? 1 : 0;
+                m = { W, H, k, PAD, b, d: sqDistance(out, W, H) }; EDGE_DEPTH.set(patch, m);
+            }
+            return (x, y) => { const ix = clamp(Math.round((x - m.b.minX) * m.k + m.PAD - 0.5), 0, m.W - 1), iy = clamp(Math.round((y - m.b.minY) * m.k + m.PAD - 0.5), 0, m.H - 1); return Math.max(0, (Math.sqrt(m.d[iy * m.W + ix]) - 0.5) / m.k); };
+        };
         // 一維平方距離轉換（Felzenszwalb & Huttenlocher）
         const edt1d = (f, n, d, v, z) => {
             let k = 0; v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
@@ -3537,6 +3552,14 @@
                     return pointInPolygon(x, y, q) && q.every((p, i) => distToSegment(x, y, p, q[(i + 1) % 4]) >= R);
                 };
                 // Edge margin > 0：整個孔（以膠囊近似）都在邊界內，且離邊緣至少 margin；凸形邊界只需檢查膠囊兩端
+                // 到邊界的距離（mm，板內為正）：Edge 尺寸場用
+                const uvDepth = boundaryShape === 'uv' && attractorMode === 'edge' ? uvEdgeDepth(uvPatch) : null;
+                const edgeDepth = (x, y) => {
+                    if (uvDepth) return uvDepth(x, y);
+                    if (boundaryShape === 'rect') { const b = getBounds(); return Math.max(0, Math.min(x - b.minX, b.maxX - x, y - b.minY, b.maxY - y)); }
+                    if (boundaryShape === 'circle') return Math.max(0, P.bRad - dist(x, y, P.bCX, P.bCY));
+                    const q = P.quadPts; return pointInPolygon(x, y, q) ? Math.min(...q.map((p, i) => distToSegment(x, y, p, q[(i + 1) % 4]))) : 0;
+                };
                 const margin = Math.max(0, P.edgeMargin || 0);
                 const holeFits = (d) => {
                     const c = capsule(d, P.holeShape), R = c.r + margin;
@@ -3549,6 +3572,7 @@
                 const fieldS = (x, y) => {
                     if (attractorMode === 'none') return 1;
                     let dAtt = 0;
+                    if (attractorMode === 'edge') dAtt = edgeDepth(x, y); else
                     if (attractorMode === 'radial') dAtt = Math.abs(Math.hypot(x - ring.x, y - ring.y) - P.attractorRadius);
                     else if (attractorMode === 'curve') {
                         let minD = Infinity;
@@ -3870,7 +3894,7 @@
                     ctx.save(); if (attractorMode !== 'none') {
                         const color = COLORS[attractorMode];
                         ctx.strokeStyle = color; ctx.lineWidth = 1.5;
-                        if (attractorMode === 'radial') {
+                        if (attractorMode === 'edge') { /* 沒有可拖曳的控制點 */ } else if (attractorMode === 'radial') {
                             const rc = ringCentre(params);
                             ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(X(rc.x), Y(rc.y), params.attractorRadius * zoom, 0, Math.PI*2); ctx.stroke();
                             ctx.setLineDash([]); handle(rc.x + params.attractorRadius, rc.y, color, 6);
@@ -4759,7 +4783,7 @@
                                 </div>
                                 {attractorMode === 'radial' && <label className="check"><input type="checkbox" checked={params.attractorLock} onChange={e => { const on = e.target.checked; setParams(p => on ? { ...p, attractorLock: true } : { ...p, attractorLock: false, attractorX: p.patternX, attractorY: p.patternY }); }} />Lock the ring to the array centre</label>}
                                 {fieldOn && <p className="hint"><span className="legend" style={{ background: COLORS[attractorMode] }}></span>
-                                    {attractorMode === 'radial' ? (params.attractorLock ? 'Holes shrink toward the dashed ring, which moves with the array. Drag its dot to change the radius.' : 'Holes shrink toward the dashed ring. Drag the ring or its centre to move it, and its dot to change the radius.') : attractorMode === 'curve' ? 'Holes shrink toward the curve. Drag its four control points.' : 'Holes shrink toward the line. Drag either end.'}
+                                    {attractorMode === 'radial' ? (params.attractorLock ? 'Holes shrink toward the dashed ring, which moves with the array. Drag its dot to change the radius.' : 'Holes shrink toward the dashed ring. Drag the ring or its centre to move it, and its dot to change the radius.') : attractorMode === 'curve' ? 'Holes shrink toward the curve. Drag its four control points.' : attractorMode === 'edge' ? 'Holes shrink toward the edge of the part or surface and reach full size at the Influence distance in from it.' : 'Holes shrink toward the line. Drag either end.'}
                                 </p>}
                             </Section>
 

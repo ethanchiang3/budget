@@ -2774,13 +2774,32 @@
         // 在 ctx 上加入一個孔的路徑；X/Y 把 mm 轉成畫面座標，zoom 為每 mm 的像素
         // d.aff = [p, q, r]：True-size holes 的對稱 2×2 拉伸 [p q; q r]，以孔中心為原點；畫布在加入路徑時就套用目前的變換
         const traceHolePath = (ctx, d, X, Y, zoom, shape, corner) => {
-            if (!d.aff) return traceHoleShape(ctx, d, X, Y, zoom, shape, corner);
+            if (!d.aff || d.arc) return traceHoleShape(ctx, d, X, Y, zoom, shape, corner);
             const [p, q, r] = d.aff, hx = X(d.x), hy = Y(d.y);
             ctx.save(); ctx.transform(p, q, q, r, hx - p * hx - q * hy, hy - q * hx - r * hy);
             traceHoleShape(ctx, d, X, Y, zoom, shape, corner);
             ctx.restore();
         };
+        const traceArc = (ctx, d, X, Y, zoom) => {
+            const { cx, cy, r, a0, a1, full } = d.arc, hw = d.dia / 2, x0 = X(cx), y0 = Y(cy), R = r * zoom, w = hw * zoom;
+            if (full) { ctx.moveTo(x0 + R + w, y0); ctx.arc(x0, y0, R + w, 0, Math.PI * 2); ctx.moveTo(x0 + R - w, y0); ctx.arc(x0, y0, Math.max(R - w, 0), 0, Math.PI * 2, true); return; }
+            const ex = x0 + R * Math.cos(a1), ey = y0 + R * Math.sin(a1), sx = x0 + R * Math.cos(a0), sy = y0 + R * Math.sin(a0);
+            ctx.moveTo(x0 + (R + w) * Math.cos(a0), y0 + (R + w) * Math.sin(a0));
+            ctx.arc(x0, y0, R + w, a0, a1); ctx.arc(ex, ey, w, a1, a1 + Math.PI);
+            ctx.arc(x0, y0, Math.max(R - w, 0), a1, a0, true); ctx.arc(sx, sy, w, a0 + Math.PI, a0 + 2 * Math.PI); ctx.closePath();
+        };
+        // 圓弧孔的外形折線（世界座標，Y 朝下）；完整圓環回傳兩個迴圈
+        const arcLoops = (d) => {
+            const { cx, cy, r, a0, a1, full } = d.arc, hw = d.dia / 2, pt = (rr, a) => [cx + rr * Math.cos(a), cy + rr * Math.sin(a)], n = Math.max(24, Math.ceil(Math.abs(a1 - a0) / (Math.PI / 90)));
+            if (full) return [Array.from({ length: n }, (_, i) => pt(r + hw, a0 + (a1 - a0) * i / n)), Array.from({ length: n }, (_, i) => pt(Math.max(r - hw, 0), a0 + (a1 - a0) * (n - i) / n))];
+            const loop = []; for (let i = 0; i <= n; i++) loop.push(pt(r + hw, a0 + (a1 - a0) * i / n));
+            for (let i = 1; i < 12; i++) { const t = a1 + Math.PI * i / 12; loop.push([cx + r * Math.cos(a1) + hw * Math.cos(t), cy + r * Math.sin(a1) + hw * Math.sin(t)]); }
+            for (let i = 0; i <= n; i++) loop.push(pt(Math.max(r - hw, 0), a1 - (a1 - a0) * i / n));
+            for (let i = 1; i < 12; i++) { const t = a0 + Math.PI + Math.PI * i / 12; loop.push([cx + r * Math.cos(a0) + hw * Math.cos(t), cy + r * Math.sin(a0) + hw * Math.sin(t)]); }
+            return [loop];
+        };
         const traceHoleShape = (ctx, d, X, Y, zoom, shape, corner) => {
+            if (d.arc) return traceArc(ctx, d, X, Y, zoom);
             const hx = X(d.x), hy = Y(d.y), w = d.dia * zoom, l = d.len * zoom, a = d.ang;
             const ux = Math.cos(a), uy = Math.sin(a);
             const P = (lx, ly) => [hx + lx * ux - ly * uy, hy + lx * uy + ly * ux];
@@ -3627,12 +3646,8 @@
                             for (let i = 0; i < fullCount; i++) ringDot((i/fullCount)*Math.PI*2);
                         }
                     } else if (patternType === 'stripes' || patternType === 'concentric') {
-                        // 長條孔：每條帶一個（或一串）長孔；同心圓用弦長的長孔沿圓切線排列，端點正好落在圓上
-                        const addSlot = (lx, ly, len, tang) => {
-                            const [x, y] = place(lx, ly), s = fieldS(x, y), dia = sizeFromS(s);
-                            dots.push({ x, y, dia, len: Math.max(len, dia), ang: holeAngle(x, y, row, s) + (P.holeOrient === 'fixed' ? tang : 0) });
-                        };
-                        const gap = Math.max(0, P.dashGap), baseR = margin + P.baseDiameter / 2;
+                        // 連續線條：條紋是切到邊界的長槽孔，同心圓是完整（或切到邊界的）圓弧槽，孔寬跟隨尺寸場
+                        const baseR = margin + P.baseDiameter / 2;
                         const inRunS = (x, y) => margin ? insideBy(x, y, baseR) : isInside(x, y);
                         if (patternType === 'stripes') {
                             const bb = getBounds(), half = Math.max(...[[bb.minX, bb.minY], [bb.maxX, bb.minY], [bb.minX, bb.maxY], [bb.maxX, bb.maxY]].map(([x, y]) => Math.abs(unplace(x, y)[0]))) + P.baseDiameter;
@@ -3640,29 +3655,25 @@
                                 row = j;
                                 const y = (j - (P.gridRows - 1) / 2) * P.spacingY;
                                 insideRuns(x => inRunS(...place(x, y)), -half, half, 800).forEach(seg => {
-                                    const L = seg.e - seg.s;
-                                    if (!(P.dashLen > 0)) { addSlot((seg.s + seg.e) / 2, y, L + P.baseDiameter, 0); return; }
-                                    const pitch = P.dashLen + gap, n = Math.max(1, Math.floor((L + gap + P.baseDiameter) / pitch));
-                                    const used = n * pitch - gap, start = seg.s - P.baseDiameter / 2 + ((L + P.baseDiameter) - used) / 2 + (j % 2 ? P.stagger * pitch : 0) % pitch;
-                                    for (let i = 0; i < n; i++) { const c = start + P.dashLen / 2 + i * pitch; if (c - P.dashLen / 2 >= seg.s - P.baseDiameter / 2 - 1e-6 && c + P.dashLen / 2 <= seg.e + P.baseDiameter / 2 + 1e-6) addSlot(c, y, P.dashLen, 0); }
+                                    const [x, yy] = place((seg.s + seg.e) / 2, y), s = fieldS(x, yy), dia = sizeFromS(s);
+                                    dots.push({ x, y: yy, dia, len: Math.max(seg.e - seg.s + P.baseDiameter, dia), ang: -grot });
                                 });
                             }
                         } else {
                             for (let r = 1; r <= P.gridRows; r++) {
                                 row = r - 1;
-                                const rad = r * P.spacingY, K = Math.max(1, P.mirrorCount);
-                                let n;
-                                if (P.dashLen > 0) n = Math.round(2 * Math.PI * rad / (P.dashLen + gap) / K) * K;
-                                else { const sag = Math.max(0.02, P.baseDiameter * 0.15); n = Math.ceil(Math.PI / Math.acos(Math.max(0, 1 - sag / rad)) / K) * K; }
-                                n = Math.max(K, n);
-                                const half = Math.PI / n, chord = 2 * rad * Math.sin(half), len = Math.max(P.baseDiameter, chord - gap), cr = rad * Math.cos(half);
-                                for (let i = 0; i < n; i++) {
-                                    const a = (i + 0.5) / n * 2 * Math.PI, lx = cr * Math.cos(a), ly = cr * Math.sin(a), [px, py] = place(lx, ly);
-                                    if (!margin && !isInside(px, py)) continue;
-                                    const sl = fieldS(px, py), dia = sizeFromS(sl), d = { x: px, y: py, dia, len, ang: holeAngle(px, py, row, sl) + (P.holeOrient === 'fixed' ? a + Math.PI / 2 : 0) };
-                                    if (margin && !holeFits(d)) continue;
-                                    dots.push(d);
-                                }
+                                const rad = r * P.spacingY, [cx0, cy0] = place(0, 0);
+                                const arcDot = (a0, a1, full) => {
+                                    // a0、a1：圖案座標的角度；螢幕上的角度要減去群組旋轉
+                                    const am = (a0 + a1) / 2, [x, y] = place(rad * Math.cos(am), rad * Math.sin(am)), s = fieldS(x, y), dia = sizeFromS(s);
+                                    const sa0 = a0 - grot, sa1 = a1 - grot, chord = 2 * rad * Math.sin(Math.min(Math.PI / 2, (a1 - a0) / 2));
+                                    dots.push({ x, y, dia, len: Math.max(chord, dia), ang: am - grot + Math.PI / 2, arc: { cx: cx0, cy: cy0, r: rad, a0: sa0, a1: sa1, full } });
+                                };
+                                const runs = insideRuns(a => inRunS(...place(rad * Math.cos(a), rad * Math.sin(a))), 0, Math.PI * 2, 720);
+                                if (!runs.length) continue;
+                                if (runs.length === 1 && runs[0].s <= 1e-9 && runs[0].e >= Math.PI * 2 - 1e-9) { arcDot(0, Math.PI * 2, true); continue; }
+                                if (runs.length > 1 && runs[0].s <= 1e-9 && runs[runs.length - 1].e >= Math.PI * 2 - 1e-9) { const last = runs.pop(); runs[0].s = last.s - Math.PI * 2; }
+                                runs.forEach(seg => arcDot(seg.s, seg.e, false));
                             }
                         }
                     } else if (patternType === 'splineGrid') {
@@ -4085,6 +4096,7 @@
                     const cx = n(d.x), cy = n(d.y), w = d.dia, l = d.len, deg = n(d.ang * 180 / Math.PI);
                     const rot = deg ? ` transform="rotate(${deg} ${cx} ${cy})"` : '';
                     let el;
+                    if (d.arc) { out += `<path fill-rule="evenodd" d="${arcLoops(d).map(l => 'M' + l.map(([x, y]) => `${n(x)} ${n(y)}`).join('L') + 'Z').join('')}"/>`; return; }
                     if (shape === 'round') el = `<circle cx="${cx}" cy="${cy}" r="${n(w / 2)}"/>`;
                     else if (shape === 'ellipse') el = `<ellipse cx="${cx}" cy="${cy}" rx="${n(l / 2)}" ry="${n(w / 2)}"${rot}/>`;
                     else if (shape === 'hex' || shape === 'tri') el = `<polygon points="${(shape === 'hex' ? hexVerts : triVerts)(w, l).map(([lx, ly]) => `${n(d.x + lx * Math.cos(d.ang) - ly * Math.sin(d.ang))},${n(d.y + lx * Math.sin(d.ang) + ly * Math.cos(d.ang))}`).join(' ')}"/>`;
@@ -4142,6 +4154,7 @@
                 const q = Math.tan(Math.PI / 8);
                 dots.forEach(d => {
                     const w = d.dia, l = d.len, hw = l / 2, hh = w / 2;
+                    if (d.arc) { arcLoops(d).forEach(l => { L.push('0', 'POLYLINE', '8', 'HOLES', '66', '1', '10', '0', '20', '0', '30', '0', '70', '1'); l.forEach(([x, y]) => L.push('0', 'VERTEX', '8', 'HOLES', '10', n(x + ox), '20', n(-(y + oy)), '30', '0')); L.push('0', 'SEQEND', '8', 'HOLES'); }); return; }
                     if (d.aff) { // 拉伸後的孔：折線外形
                         L.push('0', 'POLYLINE', '8', 'HOLES', '66', '1', '10', '0', '20', '0', '30', '0', '70', '1');
                         holeOutline(d, shape, params.holeCorner).forEach(([x, y]) => L.push('0', 'VERTEX', '8', 'HOLES', '10', n(x + ox), '20', n(-(y + oy)), '30', '0'));
@@ -4445,7 +4458,7 @@
                 const raw = engine.collectDots();
                 // True-size holes：每個孔帶上孔中心的 G^(-1/2)，畫圖與匯出時以孔中心為原點套用
                 // 變形不到 0.1% 的孔（平坦處）維持原樣，DXF 仍輸出精確的圓
-                const dots = mode3D && uvPatch && trueSize ? raw.map(d => { const hit = uvLocate(uvPatch, d.x, d.y, 1e-4), aff = hit && holeStretch(uvPatch, hit); return aff && Math.max(Math.abs(aff[0] - 1), Math.abs(aff[1]), Math.abs(aff[2] - 1)) > 1e-3 ? { ...d, aff } : d; }) : raw;
+                const dots = mode3D && uvPatch && trueSize ? raw.map(d => { const hit = uvLocate(uvPatch, d.x, d.y, 1e-4), aff = hit && holeStretch(uvPatch, hit); return aff && !d.arc && Math.max(Math.abs(aff[0] - 1), Math.abs(aff[1]), Math.abs(aff[2] - 1)) > 1e-3 ? { ...d, aff } : d; }) : raw;
                 return { dots, analysis: engine.analyze(dots) };
             }, [params, boundaryShape, uvPatch, trueSize, mode3D]);
             // 板材外形的裁切路徑（frame 的像素座標）：高度圖裡板材外不算孔
@@ -4692,13 +4705,7 @@
                                         <Param id="rings" label={patternType === 'stripes' ? 'Stripes' : 'Rings'} value={params.gridRows} min={patternType === 'stripes' ? 2 : 1} max={150} step={1} decimals={0} onChange={set('gridRows')} />
                                         <Param id="ring-pitch" label={patternType === 'stripes' ? 'Stripe pitch' : 'Ring pitch'} value={params.spacingY} min={0.3} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingY')} />
                                     </div>
-                                    <div className="row2">
-                                        <Param id="dash-len" label="Dash length" value={params.dashLen} min={0} max={100} step={0.5} unit="mm" typedMax={1000} onChange={set('dashLen')} />
-                                        <Param id="dash-gap" label="Gap" value={params.dashGap} min={0} max={20} step={0.25} unit="mm" typedMax={200} onChange={set('dashGap')} />
-                                    </div>
-                                    {patternType === 'concentric' ? <Param id="mirror" label="Symmetry" value={params.mirrorCount} min={1} max={32} step={1} decimals={0} unit="×" onChange={set('mirrorCount')} />
-                                        : params.dashLen > 0 && <Param id="stagger" label="Dash stagger" value={params.stagger} min={0} max={1} step={0.01} decimals={2} onChange={set('stagger')} />}
-                                    <p className="hint">{patternType === 'stripes' ? 'Each row is one long slot cut to the boundary. Set a Dash length for broken stripes.' : 'Each ring is a chain of slots whose ends sit on the circle. Dash length 0 uses the finest chain; the Gap leaves bridges between slots.'} Hole shape is Slot by default; width follows the size field.</p>
+                                    <p className="hint">{patternType === 'stripes' ? 'Each stripe is one continuous slot cut to the boundary.' : 'Each ring is one continuous curved slot, cut to the boundary where it leaves the part.'} The slot width follows the size field (Max Ø, Min Ø).</p>
                                 </> : patternType === 'radial' ? <>
                                     <div className="row2">
                                         <Param id="rings" label="Rings" value={params.gridRows} min={1} max={150} step={1} decimals={0} onChange={set('gridRows')} />
@@ -4756,7 +4763,7 @@
                                 </p>}
                             </Section>
 
-                            <Section icon="shapes" title="Hole shape" summary={shapeSummary} open={openSections.shape} onToggle={toggleSection('shape')}>
+                            {patternType !== 'stripes' && patternType !== 'concentric' && <Section icon="shapes" title="Hole shape" summary={shapeSummary} open={openSections.shape} onToggle={toggleSection('shape')}>
                                 <Segmented label="Hole shape" glyphs options={HOLE_SHAPES} value={params.holeShape} onChange={set('holeShape')} />
                                 {!roundHoles && <>
                                     <div className="row2">
@@ -4772,7 +4779,7 @@
                                     </div>
                                     <p className="hint">{orientHint}{fieldOn && params.holeTwist ? ' Field twist turns holes further the closer they sit to the field.' : ''} Alternate rows: Mirror gives herringbone, 90° basket weave, 180° flips triangles. Largest hole: {fmt(stats.maxDia)} × {fmt(stats.maxLen)} mm.</p>
                                 </>}
-                            </Section>
+                            </Section>}
 
                             <Section icon="square-dashed" title="Boundary" summary={boundarySummary} open={openSections.boundary} onToggle={toggleSection('boundary')}>
                                 {boundaryShape === 'uv' ? <p className="hint">The boundary is the selected surface, unwrapped flat ({boundW} × {boundH} mm). Choose surfaces in the 3D view.</p> : <>

@@ -336,7 +336,7 @@
             bCX: 0, bCY: 0, bRad: 60,
             quadPts: [ {x: -100, y: -50}, {x: 100, y: -50}, {x: 120, y: 50}, {x: -120, y: 50} ],
             influenceRange: 35, attractorRadius: 60, falloff: 1.0,
-            dispProfile: 'round', dispWidth: 0.5, dispAlign: 'inside', dispBlur: 0, dispPolarity: 'raised', dispRes: 10,
+            dispProfile: 'round', dispWidth: 0.5, dispAlign: 'inside', dispBlur: 0, dispPolarity: 'raised', dispRes: 10, dispDome: 100,
             attractorX: 0, attractorY: 0, attractorLock: false,
             rotation: 0, mirrorCount: 6,
             patternX: 0, patternY: 0, scaleHoles: true,
@@ -353,7 +353,7 @@
             fitFrame: null
         };
         // 位移圖：邊緣輪廓、邊緣帶的位置、孔凸起或凹下
-        const DISP_PROFILES = [{ value: 'round', label: 'Round' }, { value: 'smooth', label: 'Smooth' }, { value: 'chamfer', label: 'Chamfer' }, { value: 'cove', label: 'Cove' }];
+        const DISP_PROFILES = [{ value: 'round', label: 'Round' }, { value: 'smooth', label: 'Smooth' }, { value: 'chamfer', label: 'Chamfer' }, { value: 'cove', label: 'Cove' }, { value: 'dome', label: 'Dome' }];
         const DISP_ALIGNS = [{ value: 'inside', label: 'Inside' }, { value: 'center', label: 'Centred' }, { value: 'outside', label: 'Outside' }];
         const DISP_POLARITY = [{ value: 'raised', label: 'Raised' }, { value: 'recessed', label: 'Recessed' }];
         const ENUMS = { patternType: PATTERNS, attractorMode: FIELDS, boundaryShape: SHAPES, trimTarget: TRIMS, holeShape: HOLE_SHAPES, holeOrient: ORIENTS, holeAlt: ALTS, dispProfile: DISP_PROFILES, dispAlign: DISP_ALIGNS, dispPolarity: DISP_POLARITY };
@@ -548,7 +548,7 @@
                                     <li><b>Hole shape</b>: Round, Slot, Ellipse, Rect, Hex or Tri, with Length, Tilt, orientation (Fixed, Follow field, Radial), Field twist and Alternate rows.</li>
                                     <li><b>Boundary</b>: Rect, Circle or Quad. Drag the red handles, choose Trim dots or Trim curves, and set an Edge margin.</li>
                                     <li><b>Analysis</b> (top right): hole count, open area, minimum web and mass. <b>Fix</b> resolves holes or webs too small to manufacture.</li>
-                                    <li><b>Displacement</b>: to use the pattern as a height or displacement map, choose the edge profile (Round, Smooth, Chamfer, Cove), Edge width, where the edge sits and Blur. Switch the view to <b>Height</b> to see it; in 3D it shows as relief on the part.</li>
+                                    <li><b>Displacement</b>: to use the pattern as a height or displacement map, choose the edge profile (Round, Smooth, Chamfer, Cove, or Dome for a full dome or dimple over each hole), Edge width or Fullness, where the edge sits and Blur. Switch the view to <b>Height</b> to see it; in 3D it shows as relief on the part.</li>
                                 </ol>
                             </section>
                             <section id="g-3d">
@@ -2813,6 +2813,12 @@
         // ---------- 位移圖（高度圖） ----------
         // 孔的邊緣輪廓：t 從邊緣起點 0 到頂部 1；Round = 凸圓角、Cove = 凹圓角、Smooth = S 形、Chamfer = 直線倒角
         const profileAt = (kind, t) => kind === 'chamfer' ? t : kind === 'smooth' ? t * t * (3 - 2 * t) : kind === 'cove' ? 1 - Math.sqrt(Math.max(0, 1 - t * t)) : Math.sqrt(Math.max(0, 1 - (1 - t) * (1 - t)));
+        // 圓頂：u = 到孔中心的相對位置（0 = 中心、1 = 孔緣），剖面是半徑 ρ = R / sin θ 的圓弧（球冠），高度歸一化到 1
+        // Fullness 100% → θ = 90°（半球，孔緣垂直），越低越接近拋物面、孔緣越平緩
+        const domeAt = (u, fullness) => {
+            const th = (10 + 80 * clamp(fullness / 100, 0, 1)) * Math.PI / 180, r = 1 / Math.sin(th), base = Math.sqrt(Math.max(r * r - 1, 0));
+            return u >= 1 ? 0 : (Math.sqrt(r * r - u * u) - base) / (r - base);
+        };
         // d：到孔邊緣的有號距離（mm，孔內為正）；邊緣帶可在輪廓內側、置中或外側
         const edgeT = (d, w, align) => { if (!(w > 0)) return d > 0 ? 1 : 0; const d0 = align === 'outside' ? -w : align === 'center' ? -w / 2 : 0; return clamp((d - d0) / w, 0, 1); };
         // 一維平方距離轉換（Felzenszwalb & Huttenlocher）
@@ -2862,13 +2868,23 @@
             const px = ctx.getImageData(0, 0, W, H).data, N = W * H, a = new Float32Array(N), inS = new Uint8Array(N), outS = new Uint8Array(N);
             for (let i = 0; i < N; i++) { a[i] = px[i * 4] / 255; if (a[i] >= 0.5) inS[i] = 1; else outS[i] = 1; }
             const dIn = sqDistance(inS, W, H), dOut = sqDistance(outS, W, H);
-            const w = Math.max(0, P.dispWidth), h = new Float32Array(N);
-            for (let i = 0; i < N; i++) {
-                // 有號距離（像素）：反鋸齒的邊緣像素用覆蓋率補上次像素精度
-                let sd = inS[i] ? Math.sqrt(dOut[i]) - 0.5 : 0.5 - Math.sqrt(dIn[i]);
-                if (a[i] > 0.002 && a[i] < 0.998) sd = a[i] - 0.5;
-                h[i] = profileAt(P.dispProfile, edgeT(sd / k, w, P.dispAlign));
-            }
+            const w = Math.max(0, P.dispWidth), h = new Float32Array(N), sd = new Float32Array(N);
+            // 有號距離（像素）：反鋸齒的邊緣像素用覆蓋率補上次像素精度
+            for (let i = 0; i < N; i++) { sd[i] = inS[i] ? Math.sqrt(dOut[i]) - 0.5 : 0.5 - Math.sqrt(dIn[i]); if (a[i] > 0.002 && a[i] < 0.998) sd[i] = a[i] - 0.5; }
+            if (P.dispProfile === 'dome') {
+                // 圓頂要知道每個孔自己的「內切半徑」：逐一找出孔的連通區域，取區域內最大的距離
+                const seen = new Uint8Array(N), stack = new Int32Array(N), reach = new Float32Array(N);
+                for (let i0 = 0; i0 < N; i0++) {
+                    if (!inS[i0] || seen[i0]) continue;
+                    let top = 0, n2 = 0, mx = 0.5; stack[top++] = i0; seen[i0] = 1;
+                    while (top) { const i = stack[--top]; reach[n2++] = i; if (sd[i] > mx) mx = sd[i]; const x = i % W;
+                        if (x > 0 && inS[i - 1] && !seen[i - 1]) { seen[i - 1] = 1; stack[top++] = i - 1; }
+                        if (x < W - 1 && inS[i + 1] && !seen[i + 1]) { seen[i + 1] = 1; stack[top++] = i + 1; }
+                        if (i >= W && inS[i - W] && !seen[i - W]) { seen[i - W] = 1; stack[top++] = i - W; }
+                        if (i + W < N && inS[i + W] && !seen[i + W]) { seen[i + W] = 1; stack[top++] = i + W; } }
+                    for (let j = 0; j < n2; j++) { const i = reach[j]; h[i] = domeAt(1 - clamp(sd[i] / mx, 0, 1), P.dispDome); }
+                }
+            } else for (let i = 0; i < N; i++) h[i] = profileAt(P.dispProfile, edgeT(sd[i] / k, w, P.dispAlign));
             const out = boxBlur(h, W, H, Math.max(0, P.dispBlur) * k);
             if (P.dispPolarity === 'recessed') for (let i = 0; i < N; i++) out[i] = 1 - out[i];
             return { W, H, h: out };
@@ -2903,7 +2919,7 @@
         const BumpProfile = ({ P, radius }) => {
             const w = Math.max(0, P.dispWidth), R = Math.max(radius, 0.05), span = R + Math.max(w, R * 0.4) * 1.25 + P.dispBlur * 2, n = 160;
             const xs = Array.from({ length: n + 1 }, (_, i) => -span + 2 * span * i / n);
-            let hs = xs.map(x => profileAt(P.dispProfile, edgeT(R - Math.abs(x), w, P.dispAlign)));
+            let hs = xs.map(x => P.dispProfile === 'dome' ? domeAt(Math.abs(x) / R, P.dispDome) : profileAt(P.dispProfile, edgeT(R - Math.abs(x), w, P.dispAlign)));
             const sg = Math.max(0, P.dispBlur) / (2 * span / n);
             if (sg > 0.3) { const r = Math.ceil(sg * 3), ker = Array.from({ length: 2 * r + 1 }, (_, i) => Math.exp(-((i - r) ** 2) / (2 * sg * sg))), ks = ker.reduce((a, b) => a + b, 0); hs = hs.map((_, i) => ker.reduce((acc, kv, j) => acc + kv * hs[clamp(i + j - r, 0, n)], 0) / ks); }
             if (P.dispPolarity === 'recessed') hs = hs.map(v => 1 - v);
@@ -4404,7 +4420,7 @@
                     setHeightPreview({ canvas: heightCanvas(hf), frame });
                 }, 100);
                 return () => clearTimeout(t);
-            }, [view.mode, dots, params.dispProfile, params.dispWidth, params.dispAlign, params.dispBlur, params.dispPolarity, params.dispRes]);
+            }, [view.mode, dots, params.dispProfile, params.dispWidth, params.dispAlign, params.dispBlur, params.dispPolarity, params.dispRes, params.dispDome]);
             const stats = useMemo(() => {
                 const area = getArea();
                 const finish = FINISHES[params.finish] || FINISHES.aluminium;
@@ -4730,9 +4746,13 @@
                                     : 'Rule of thumb for punched sheet: hole width and the web between holes should be at least the sheet thickness.'} Webs between non-round holes are approximate.</p>
                             </Section>
 
-                            <Section icon="mountain" title="Displacement" summary={`${DISP_PROFILES.find(o => o.value === params.dispProfile).label} · ${fmt(params.dispWidth)} mm`} open={openSections.disp} onToggle={toggleSection('disp')}>
+                            <Section icon="mountain" title="Displacement" summary={params.dispProfile === 'dome' ? `Dome · ${fmt(params.dispDome, 0)}%` : `${DISP_PROFILES.find(o => o.value === params.dispProfile).label} · ${fmt(params.dispWidth)} mm`} open={openSections.disp} onToggle={toggleSection('disp')}>
                                 <BumpProfile P={params} radius={Math.max(stats.maxDia, 0.1) / 2} />
                                 <Segmented label="Edge profile" inline tight options={DISP_PROFILES} value={params.dispProfile} onChange={set('dispProfile')} />
+                                {params.dispProfile === 'dome' ? <div className="row2">
+                                    <Param id="disp-dome" label="Fullness" value={params.dispDome} min={0} max={100} step={1} decimals={0} unit="%" onChange={set('dispDome')} />
+                                    <Param id="disp-blur" label="Blur" value={params.dispBlur} min={0} max={5} step={0.05} decimals={2} unit="mm" typedMax={50} onChange={set('dispBlur')} />
+                                </div> : <>
                                 <div className="row2">
                                     <Param id="disp-width" label="Edge width" value={params.dispWidth} min={0} max={5} step={0.05} decimals={2} unit="mm" typedMax={50} onChange={set('dispWidth')} />
                                     <Param id="disp-blur" label="Blur" value={params.dispBlur} min={0} max={5} step={0.05} decimals={2} unit="mm" typedMax={50} onChange={set('dispBlur')} />
@@ -4740,13 +4760,13 @@
                                 <div className="param">
                                     <span className="param-label">Edge sits</span>
                                     <Segmented label="Edge position" inline options={DISP_ALIGNS} value={params.dispAlign} onChange={set('dispAlign')} />
-                                </div>
+                                </div></>}
                                 <div className="param">
                                     <span className="param-label">Holes are</span>
                                     <Segmented label="Hole height" inline options={DISP_POLARITY} value={params.dispPolarity} onChange={set('dispPolarity')} />
                                 </div>
                                 <Param id="disp-res" label="Map resolution" value={params.dispRes} min={2} max={40} step={1} decimals={0} unit="px/mm" typedMax={100} onChange={set('dispRes')} />
-                                <p className="hint">White is high. Round rounds over the top edge, Cove adds a concave fillet at the base, Smooth eases both ends and Chamfer is a straight slope. Edge width is how far the slope runs {params.dispAlign === 'inside' ? 'in from' : params.dispAlign === 'outside' ? 'out from' : 'across'} the hole outline (dashed); Blur softens everything.</p>
+                                <p className="hint">{params.dispProfile === 'dome' ? 'White is high. Dome rises over the whole hole from its outline (dashed) to the centre: a spherical cap on round holes, a rounded ridge on slots. Fullness 100% is a full round; lower values give a shallower cap that meets the surface more gently. Recessed makes dimples.' : <>White is high. Round rounds over the top edge, Cove adds a concave fillet at the base, Smooth eases both ends and Chamfer is a straight slope. Edge width is how far the slope runs {params.dispAlign === 'inside' ? 'in from' : params.dispAlign === 'outside' ? 'out from' : 'across'} the hole outline (dashed); Blur softens everything.</>}</p>
                                 <div className="btn-row">
                                     <button className={`btn-ghost ${view.mode === 'height' ? 'accent' : ''}`} onClick={() => setView(v => ({ ...v, mode: v.mode === 'height' ? 'drawing' : 'height' }))}><Icon name={view.mode === 'height' ? 'eye-off' : 'eye'} size={14} />{view.mode === 'height' ? 'Hide height map' : 'Preview height map'}</button>
                                     <button className="btn-ghost" onClick={exportHeightMap}><Icon name="download" size={14} />Export PNG</button>

@@ -296,7 +296,8 @@
         // 常數定義
         const PATTERNS = [
             { value: 'grid', label: 'Grid', icon: 'grid-3x3' }, { value: 'hexagonal', label: 'Hex', icon: 'hexagon' },
-            { value: 'radial', label: 'Radial', icon: 'circle-dot' }, { value: 'splineGrid', label: 'Spline', icon: 'waves' }
+            { value: 'radial', label: 'Radial', icon: 'circle-dot' }, { value: 'splineGrid', label: 'Spline', icon: 'waves' },
+            { value: 'stripes', label: 'Stripes', icon: 'align-justify' }, { value: 'concentric', label: 'Rings', icon: 'target' }
         ];
         const FIELDS = [
             { value: 'none', label: 'None', icon: 'ban' }, { value: 'radial', label: 'Radial', icon: 'target' },
@@ -338,6 +339,7 @@
             influenceRange: 35, attractorRadius: 60, falloff: 1.0,
             dispProfile: 'round', dispWidth: 0.5, dispAlign: 'inside', dispBlur: 0, dispPolarity: 'raised', dispRes: 10, dispDome: 100,
             attractorX: 0, attractorY: 0, attractorLock: false,
+            dashLen: 0, dashGap: 1.5,
             rotation: 0, mirrorCount: 6,
             patternX: 0, patternY: 0, scaleHoles: true,
             cvs: [ {x: -50, y: -20}, {x: -20, y: 30}, {x: 15, y: -25}, {x: 50, y: 20} ],
@@ -2728,7 +2730,8 @@
         // 格狀與放射陣列要蓋滿外框所需的行列（環）數
         const needCounts = (P, box) => {
             const loc = localOf(P); const cs = boxCorners(box).map(([x, y]) => loc(x, y));
-            if (P.patternType === 'radial') return { gridRows: Math.ceil(Math.max(...cs.map(([x, y]) => Math.hypot(x, y))) / P.spacingY) };
+            if (P.patternType === 'radial' || P.patternType === 'concentric') return { gridRows: Math.ceil(Math.max(...cs.map(([x, y]) => Math.hypot(x, y))) / P.spacingY) };
+            if (P.patternType === 'stripes') return { gridRows: Math.ceil(2 * Math.max(...cs.map(c => Math.abs(c[1]))) / P.spacingY) + 1 };
             const vStep = P.patternType === 'hexagonal' ? P.spacingY * 0.866 : P.spacingY;
             return { gridCols: Math.ceil(2 * Math.max(...cs.map(c => Math.abs(c[0]))) / P.spacingX) + 1, gridRows: Math.ceil(2 * Math.max(...cs.map(c => Math.abs(c[1]))) / vStep) + 1 };
         };
@@ -2763,7 +2766,7 @@
                 }
             } else if (countsCover(P, from) && !countsCover(Q, to)) {
                 const need = needCounts(Q, to);
-                Object.entries(need).forEach(([key, v]) => { Q[key] = clamp(Math.max(Q[key], v + 1), key === 'gridRows' && P.patternType === 'radial' ? 1 : 2, 150); });
+                Object.entries(need).forEach(([key, v]) => { Q[key] = clamp(Math.max(Q[key], v + 1), key === 'gridRows' && (P.patternType === 'radial' || P.patternType === 'concentric') ? 1 : 2, 150); });
             }
             return { P: Q, k };
         };
@@ -3623,6 +3626,45 @@
                             }
                             for (let i = 0; i < fullCount; i++) ringDot((i/fullCount)*Math.PI*2);
                         }
+                    } else if (patternType === 'stripes' || patternType === 'concentric') {
+                        // 長條孔：每條帶一個（或一串）長孔；同心圓用弦長的長孔沿圓切線排列，端點正好落在圓上
+                        const addSlot = (lx, ly, len, tang) => {
+                            const [x, y] = place(lx, ly), s = fieldS(x, y), dia = sizeFromS(s);
+                            dots.push({ x, y, dia, len: Math.max(len, dia), ang: holeAngle(x, y, row, s) + (P.holeOrient === 'fixed' ? tang : 0) });
+                        };
+                        const gap = Math.max(0, P.dashGap), baseR = margin + P.baseDiameter / 2;
+                        const inRunS = (x, y) => margin ? insideBy(x, y, baseR) : isInside(x, y);
+                        if (patternType === 'stripes') {
+                            const bb = getBounds(), half = Math.max(...[[bb.minX, bb.minY], [bb.maxX, bb.minY], [bb.minX, bb.maxY], [bb.maxX, bb.maxY]].map(([x, y]) => Math.abs(unplace(x, y)[0]))) + P.baseDiameter;
+                            for (let j = 0; j < P.gridRows; j++) {
+                                row = j;
+                                const y = (j - (P.gridRows - 1) / 2) * P.spacingY;
+                                insideRuns(x => inRunS(...place(x, y)), -half, half, 800).forEach(seg => {
+                                    const L = seg.e - seg.s;
+                                    if (!(P.dashLen > 0)) { addSlot((seg.s + seg.e) / 2, y, L + P.baseDiameter, 0); return; }
+                                    const pitch = P.dashLen + gap, n = Math.max(1, Math.floor((L + gap + P.baseDiameter) / pitch));
+                                    const used = n * pitch - gap, start = seg.s - P.baseDiameter / 2 + ((L + P.baseDiameter) - used) / 2 + (j % 2 ? P.stagger * pitch : 0) % pitch;
+                                    for (let i = 0; i < n; i++) { const c = start + P.dashLen / 2 + i * pitch; if (c - P.dashLen / 2 >= seg.s - P.baseDiameter / 2 - 1e-6 && c + P.dashLen / 2 <= seg.e + P.baseDiameter / 2 + 1e-6) addSlot(c, y, P.dashLen, 0); }
+                                });
+                            }
+                        } else {
+                            for (let r = 1; r <= P.gridRows; r++) {
+                                row = r - 1;
+                                const rad = r * P.spacingY, K = Math.max(1, P.mirrorCount);
+                                let n;
+                                if (P.dashLen > 0) n = Math.round(2 * Math.PI * rad / (P.dashLen + gap) / K) * K;
+                                else { const sag = Math.max(0.02, P.baseDiameter * 0.15); n = Math.ceil(Math.PI / Math.acos(Math.max(0, 1 - sag / rad)) / K) * K; }
+                                n = Math.max(K, n);
+                                const half = Math.PI / n, chord = 2 * rad * Math.sin(half), len = Math.max(P.baseDiameter, chord - gap), cr = rad * Math.cos(half);
+                                for (let i = 0; i < n; i++) {
+                                    const a = (i + 0.5) / n * 2 * Math.PI, lx = cr * Math.cos(a), ly = cr * Math.sin(a), [px, py] = place(lx, ly);
+                                    if (!margin && !isInside(px, py)) continue;
+                                    const sl = fieldS(px, py), dia = sizeFromS(sl), d = { x: px, y: py, dia, len, ang: holeAngle(px, py, row, sl) + (P.holeOrient === 'fixed' ? a + Math.PI / 2 : 0) };
+                                    if (margin && !holeFits(d)) continue;
+                                    dots.push(d);
+                                }
+                            }
+                        }
                     } else if (patternType === 'splineGrid') {
                         const nU = P.gridCols - 1; const nV = P.gridRows - 1;
                         for (let j = 0; j <= nV; j++) {
@@ -4285,7 +4327,11 @@
                 // 以圖案座標（扣掉旋轉與 Offset）計算需要的範圍
                 const b = getBounds();
                 const corners = [[b.minX, b.minY], [b.maxX, b.minY], [b.minX, b.maxY], [b.maxX, b.maxY]].map(([x, y]) => unplace(x, y));
-                if (patternType === 'radial') {
+                if (patternType === 'stripes') {
+                    const fy = Math.max(...corners.map(c => Math.abs(c[1])));
+                    setParams(p => ({ ...p, gridRows: clamp(Math.ceil(2 * fy / p.spacingY) + 2, 2, 150) }));
+                    notify('Stripes now cover the boundary');
+                } else if (patternType === 'radial' || patternType === 'concentric') {
                     const r = Math.max(...corners.map(([x, y]) => Math.hypot(x, y)));
                     setParams(p => ({ ...p, gridRows: clamp(Math.ceil(r / p.spacingY), 1, 150) }));
                     notify('Rings now reach the boundary');
@@ -4463,7 +4509,7 @@
                 return square && Math.abs(params.stagger - 0.5) < 1e-6 ? `R${d} T${fmt(params.spacingX)}` : `R${d} staggered`;
             })();
 
-            const arraySummary = ((params.holeShape === 'round' && designation) || (patternType === 'radial' ? `Radial · ${params.gridRows} rings` : patternType === 'splineGrid' ? `Spline · ${params.gridCols}×${params.gridRows}` : PATTERNS.find(pt => pt.value === patternType).label)) + (params.rotation ? ` · ${fmt(params.rotation, 1)}°` : '');
+            const arraySummary = ((params.holeShape === 'round' && designation) || (patternType === 'radial' ? `Radial · ${params.gridRows} rings` : patternType === 'concentric' ? `Rings · ${params.gridRows}` : patternType === 'stripes' ? `Stripes · ${params.gridRows}` : patternType === 'splineGrid' ? `Spline · ${params.gridCols}×${params.gridRows}` : PATTERNS.find(pt => pt.value === patternType).label)) + (params.rotation ? ` · ${fmt(params.rotation, 1)}°` : '');
             const holeSummary = fieldOn ? `${FIELDS.find(f => f.value === attractorMode).label} · Ø${fmt(params.minDiameter)}–${fmt(params.baseDiameter)}` : `Ø${fmt(params.baseDiameter)}`;
             const roundHoles = params.holeShape === 'round';
             const orientLabel = ORIENTS.find(o => o.value === params.holeOrient).label;
@@ -4639,9 +4685,21 @@
                             </>}
 
                             <Section icon="grid-3x3" title="Array" summary={arraySummary} open={openSections.array} onToggle={toggleSection('array')}>
-                                <Segmented label="Array type" options={PATTERNS} value={patternType} onChange={set('patternType')} />
+                                <Segmented label="Array type" cols={3} options={PATTERNS} value={patternType} onChange={v => setParams(p => ({ ...p, patternType: v, holeShape: p.holeShape === 'round' && (v === 'stripes' || v === 'concentric') ? 'slot' : p.holeShape }))} />
                                 {!mode3D && params.fitFrame && <div className="note"><Icon name="info" size={13} /><span>The pattern is still sized for a {fmt(params.fitFrame.w, 1)} × {fmt(params.fitFrame.h, 1)} mm surface. <button className="link" onClick={() => applyFit(false)}>Fit it to this panel</button></span></div>}
-                                {patternType === 'radial' ? <>
+                                {patternType === 'stripes' || patternType === 'concentric' ? <>
+                                    <div className="row2">
+                                        <Param id="rings" label={patternType === 'stripes' ? 'Stripes' : 'Rings'} value={params.gridRows} min={patternType === 'stripes' ? 2 : 1} max={150} step={1} decimals={0} onChange={set('gridRows')} />
+                                        <Param id="ring-pitch" label={patternType === 'stripes' ? 'Stripe pitch' : 'Ring pitch'} value={params.spacingY} min={0.3} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingY')} />
+                                    </div>
+                                    <div className="row2">
+                                        <Param id="dash-len" label="Dash length" value={params.dashLen} min={0} max={100} step={0.5} unit="mm" typedMax={1000} onChange={set('dashLen')} />
+                                        <Param id="dash-gap" label="Gap" value={params.dashGap} min={0} max={20} step={0.25} unit="mm" typedMax={200} onChange={set('dashGap')} />
+                                    </div>
+                                    {patternType === 'concentric' ? <Param id="mirror" label="Symmetry" value={params.mirrorCount} min={1} max={32} step={1} decimals={0} unit="×" onChange={set('mirrorCount')} />
+                                        : params.dashLen > 0 && <Param id="stagger" label="Dash stagger" value={params.stagger} min={0} max={1} step={0.01} decimals={2} onChange={set('stagger')} />}
+                                    <p className="hint">{patternType === 'stripes' ? 'Each row is one long slot cut to the boundary. Set a Dash length for broken stripes.' : 'Each ring is a chain of slots whose ends sit on the circle. Dash length 0 uses the finest chain; the Gap leaves bridges between slots.'} Hole shape is Slot by default; width follows the size field.</p>
+                                </> : patternType === 'radial' ? <>
                                     <div className="row2">
                                         <Param id="rings" label="Rings" value={params.gridRows} min={1} max={150} step={1} decimals={0} onChange={set('gridRows')} />
                                         <Param id="mirror" label="Symmetry" value={params.mirrorCount} min={1} max={32} step={1} decimals={0} unit="×" onChange={set('mirrorCount')} />

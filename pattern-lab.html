@@ -3677,8 +3677,10 @@
                             const bb = getBounds(), half = Math.max(...[[bb.minX, bb.minY], [bb.maxX, bb.minY], [bb.minX, bb.maxY], [bb.maxX, bb.maxY]].map(([x, y]) => Math.abs(unplace(x, y)[0]))) + P.baseDiameter;
                             // 先收集每條帶的可用長度（邊界內的長度扣掉兩端各 End gap）；Equal length 時全部取同一長度、置中，放不下的帶就略過
                             const all = [], endGap = 0;
-                            for (let j = 0; j < P.gridRows; j++) {
-                                const y = (j - (P.gridRows - 1) / 2) * P.spacingY;
+                            // 條數自動：蓋滿目前的邊界（換選別的曲面也一樣），以圖案原點為中心
+                            const yMax = Math.max(...[[bb.minX, bb.minY], [bb.maxX, bb.minY], [bb.minX, bb.maxY], [bb.maxX, bb.maxY]].map(([x, y]) => Math.abs(unplace(x, y)[1]))), nRows = Math.min(600, Math.ceil(2 * yMax / P.spacingY) + 3);
+                            for (let j = 0; j < nRows; j++) {
+                                const y = (j - (nRows - 1) / 2) * P.spacingY;
                                 insideRuns(x => inRunS(...place(x, y)), -half, half, 800).forEach(seg => all.push({ j, y, mid: (seg.s + seg.e) / 2, usable: seg.e - seg.s + P.baseDiameter - 2 * endGap }));
                             }
                             
@@ -3690,9 +3692,10 @@
                                 dots.push({ x, y: yy, dia, len: Math.max(len, dia), ang: -grot });
                             });
                         } else {
-                            for (let r = 1; r <= P.gridRows; r++) {
+                            const bb2 = getBounds(), [cx0, cy0] = place(0, 0), rMax = Math.max(...[[bb2.minX, bb2.minY], [bb2.maxX, bb2.minY], [bb2.minX, bb2.maxY], [bb2.maxX, bb2.maxY]].map(([x, y]) => Math.hypot(x - cx0, y - cy0))), nRings = Math.min(600, Math.ceil(rMax / P.spacingY) + 1);
+                            for (let r = 1; r <= nRings; r++) {
                                 row = r - 1;
-                                const rad = r * P.spacingY, [cx0, cy0] = place(0, 0);
+                                const rad = r * P.spacingY;
                                 const arcDot = (a0, a1, full) => {
                                     // a0、a1：圖案座標的角度；螢幕上的角度要減去群組旋轉
                                     const am = (a0 + a1) / 2, [x, y] = place(rad * Math.cos(am), rad * Math.sin(am)), s = fieldS(x, y), dia = sizeFromS(s);
@@ -4552,7 +4555,7 @@
                 return square && Math.abs(params.stagger - 0.5) < 1e-6 ? `R${d} T${fmt(params.spacingX)}` : `R${d} staggered`;
             })();
 
-            const arraySummary = ((params.holeShape === 'round' && designation) || (patternType === 'radial' ? `Radial · ${params.gridRows} rings` : patternType === 'concentric' ? `Rings · ${params.gridRows}` : patternType === 'stripes' ? `Stripes · ${params.gridRows}` : patternType === 'splineGrid' ? `Spline · ${params.gridCols}×${params.gridRows}` : PATTERNS.find(pt => pt.value === patternType).label)) + (params.rotation ? ` · ${fmt(params.rotation, 1)}°` : '');
+            const arraySummary = ((params.holeShape === 'round' && designation) || (patternType === 'radial' ? `Radial · ${params.gridRows} rings` : patternType === 'concentric' ? `Rings · ${fmt(params.spacingY)} mm` : patternType === 'stripes' ? `Stripes · ${fmt(params.spacingY)} mm` : patternType === 'splineGrid' ? `Spline · ${params.gridCols}×${params.gridRows}` : PATTERNS.find(pt => pt.value === patternType).label)) + (params.rotation ? ` · ${fmt(params.rotation, 1)}°` : '');
             const holeSummary = fieldOn ? `${FIELDS.find(f => f.value === attractorMode).label} · Ø${fmt(params.minDiameter)}–${fmt(params.baseDiameter)}` : `Ø${fmt(params.baseDiameter)}`;
             const roundHoles = params.holeShape === 'round';
             const orientLabel = ORIENTS.find(o => o.value === params.holeOrient).label;
@@ -4731,8 +4734,7 @@
                                 <Segmented label="Array type" cols={3} options={PATTERNS} value={patternType} onChange={v => setParams(p => ({ ...p, patternType: v, holeShape: p.holeShape === 'round' && (v === 'stripes' || v === 'concentric') ? 'slot' : p.holeShape }))} />
                                 {!mode3D && params.fitFrame && <div className="note"><Icon name="info" size={13} /><span>The pattern is still sized for a {fmt(params.fitFrame.w, 1)} × {fmt(params.fitFrame.h, 1)} mm surface. <button className="link" onClick={() => applyFit(false)}>Fit it to this panel</button></span></div>}
                                 {patternType === 'stripes' || patternType === 'concentric' ? <>
-                                    <div className="row2">
-                                        <Param id="rings" label={patternType === 'stripes' ? 'Stripes' : 'Rings'} value={params.gridRows} min={patternType === 'stripes' ? 2 : 1} max={150} step={1} decimals={0} onChange={set('gridRows')} />
+                                    <div>
                                         <Param id="ring-pitch" label={patternType === 'stripes' ? 'Stripe pitch' : 'Ring pitch'} value={params.spacingY} min={0.3} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingY')} />
                                     </div>
                                     <p className="hint">{patternType === 'stripes' ? 'Each stripe is one continuous slot cut straight through from edge to edge.' : 'Each ring is one continuous curved slot, cut to the boundary where it leaves the part.'} The slot width follows the size field (Max Ø, Min Ø).</p>
@@ -4757,7 +4759,7 @@
                                     {patternType !== 'grid' && <Param id="stagger" label="Row stagger" value={params.stagger} min={0} max={1} step={0.01} decimals={2} onChange={set('stagger')} />}
                                     {patternType === 'splineGrid' && <p className="hint"><span className="legend" style={{ background: COLORS.splineA }}></span>Drag the amber control points to bend the rows.</p>}
                                 </>}
-                                {patternType !== 'splineGrid' && <div><button className="btn-ghost" title="Add or remove columns and rows so the array just covers the boundary; the pitch stays" onClick={fillBoundary}><Icon name="maximize" size={14} />{uvPatch ? 'Fill surface' : 'Fill boundary'}</button></div>}
+                                {patternType !== 'splineGrid' && patternType !== 'stripes' && patternType !== 'concentric' && <div><button className="btn-ghost" title="Add or remove columns and rows so the array just covers the boundary; the pitch stays" onClick={fillBoundary}><Icon name="maximize" size={14} />{uvPatch ? 'Fill surface' : 'Fill boundary'}</button></div>}
                                 <div className="subhead">Pattern transform</div>
                                 <ScaleControl onStart={scaleStart} onScale={scaleBy} onEnd={scaleEnd} />
                                 <label className="check"><input type="checkbox" checked={params.scaleHoles} onChange={e => set('scaleHoles')(e.target.checked)} />Scale hole sizes too</label>

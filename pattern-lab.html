@@ -4491,7 +4491,8 @@
                 const raw = engine.collectDots();
                 // True-size holes：每個孔帶上孔中心的 G^(-1/2)，畫圖與匯出時以孔中心為原點套用
                 // 變形不到 0.1% 的孔（平坦處）維持原樣，DXF 仍輸出精確的圓
-                const dots = mode3D && uvPatch && trueSize ? raw.map(d => { const hit = uvLocate(uvPatch, d.x, d.y, 1e-4), aff = hit && holeStretch(uvPatch, hit); return aff && !d.arc && Math.max(Math.abs(aff[0] - 1), Math.abs(aff[1]), Math.abs(aff[2] - 1)) > 1e-3 ? { ...d, aff } : d; }) : raw;
+                // 條紋是貫通邊到邊的長槽孔，不做 true-size 預先拉伸（以孔中心縮放會讓兩端離開邊緣）
+                const dots = mode3D && uvPatch && trueSize ? raw.map(d => { const hit = uvLocate(uvPatch, d.x, d.y, 1e-4), aff = hit && holeStretch(uvPatch, hit); return aff && !d.arc && patternType !== 'stripes' && Math.max(Math.abs(aff[0] - 1), Math.abs(aff[1]), Math.abs(aff[2] - 1)) > 1e-3 ? { ...d, aff } : d; }) : raw;
                 return { dots, analysis: engine.analyze(dots) };
             }, [params, boundaryShape, uvPatch, trueSize, mode3D]);
             // 板材外形的裁切路徑（frame 的像素座標）：高度圖裡板材外不算孔

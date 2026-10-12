@@ -339,7 +339,7 @@
             influenceRange: 35, attractorRadius: 60, falloff: 1.0,
             dispProfile: 'round', dispWidth: 0.5, dispAlign: 'inside', dispBlur: 0, dispPolarity: 'raised', dispRes: 10, dispDome: 100,
             attractorX: 0, attractorY: 0, attractorLock: false,
-            dashLen: 0, dashGap: 1.5, stripeEqual: true, stripeLen: 0, stripeEnd: 3,
+            dashLen: 0, dashGap: 1.5, stripeEqual: false, stripeLen: 0, stripeEnd: 0,
             rotation: 0, mirrorCount: 6,
             patternX: 0, patternY: 0, scaleHoles: true,
             cvs: [ {x: -50, y: -20}, {x: -20, y: 30}, {x: 15, y: -25}, {x: 50, y: 20} ],
@@ -3676,7 +3676,7 @@
                         if (patternType === 'stripes') {
                             const bb = getBounds(), half = Math.max(...[[bb.minX, bb.minY], [bb.maxX, bb.minY], [bb.minX, bb.maxY], [bb.maxX, bb.maxY]].map(([x, y]) => Math.abs(unplace(x, y)[0]))) + P.baseDiameter;
                             // 先收集每條帶的可用長度（邊界內的長度扣掉兩端各 End gap）；Equal length 時全部取同一長度、置中，放不下的帶就略過
-                            const all = [], endGap = Math.max(0, P.stripeEnd);
+                            const all = [], endGap = P.stripeEnd;
                             for (let j = 0; j < P.gridRows; j++) {
                                 const y = (j - (P.gridRows - 1) / 2) * P.spacingY;
                                 insideRuns(x => inRunS(...place(x, y)), -half, half, 800).forEach(seg => all.push({ j, y, mid: (seg.s + seg.e) / 2, usable: seg.e - seg.s + P.baseDiameter - 2 * endGap }));
@@ -4737,9 +4737,9 @@
                                     </div>
                                     {patternType === 'stripes' && <>
                                         <label className="check"><input type="checkbox" checked={params.stripeEqual} onChange={e => set('stripeEqual')(e.target.checked)} />Equal length, centred</label>
-                                        <Param id="stripe-end" label="End gap" value={params.stripeEnd} min={0} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('stripeEnd')} />
+                                        <Param id="stripe-end" label="End gap" value={params.stripeEnd} min={-5} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('stripeEnd')} />
                                         {params.stripeEqual && <Param id="stripe-len" label="Length (0 = auto)" value={params.stripeLen} min={0} max={200} step={1} unit="mm" typedMax={1000} onChange={set('stripeLen')} />}</>}
-                                    <p className="hint">{patternType === 'stripes' ? 'Each stripe is one continuous slot with a solid gap at both ends. Equal length uses the median stripe length (or your Length); rows too short for it are left out.' : 'Each ring is one continuous curved slot, cut to the boundary where it leaves the part.'} The slot width follows the size field (Max Ø, Min Ø).</p>
+                                    <p className="hint">{patternType === 'stripes' ? 'Each stripe is one continuous slot running straight through from edge to edge of the flat surface (End gap 0); a negative End gap overshoots the edge, a positive one leaves a solid margin. Equal length uses the median stripe length (or your Length); rows too short for it are left out.' : 'Each ring is one continuous curved slot, cut to the boundary where it leaves the part.'} The slot width follows the size field (Max Ø, Min Ø).</p>
                                 </> : patternType === 'radial' ? <>
                                     <div className="row2">
                                         <Param id="rings" label="Rings" value={params.gridRows} min={1} max={150} step={1} decimals={0} onChange={set('gridRows')} />

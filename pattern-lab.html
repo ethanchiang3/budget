@@ -335,7 +335,7 @@
             baseDiameter: 2.5, minDiameter: 0.5,
             spacingX: 8.0, spacingY: 8.0, gridCols: 30, gridRows: 20, stagger: 0.5,
             bL: -120, bR: 120, bT: -50, bB: 50,
-            bCX: 0, bCY: 0, bRad: 60,
+            bCX: 0, bCY: 0, bRad: 60, boundaryLock: false,
             quadPts: [ {x: -100, y: -50}, {x: 100, y: -50}, {x: 120, y: 50}, {x: -120, y: 50} ],
             influenceRange: 35, attractorRadius: 60, falloff: 1.0,
             dispProfile: 'round', dispWidth: 0.5, dispAlign: 'inside', dispBlur: 0, dispPolarity: 'raised', dispRes: 10, dispDome: 100,
@@ -381,6 +381,8 @@
             return out;
         };
 
+        // 圓形邊界的圓心：鎖定時跟著圖案中心
+        const bcx = (P) => P.boundaryLock ? P.patternX : P.bCX, bcy = (P) => P.boundaryLock ? P.patternY : P.bCY;
         // 放射尺寸場（虛線圓）的圓心：鎖定時跟著陣列中心走
         const ringCentre = (P) => P.attractorLock ? { x: P.patternX, y: P.patternY } : { x: P.attractorX, y: P.attractorY };
 
@@ -2713,7 +2715,7 @@
         // 2D 設計面板的外框
         const panelBounds = (P) => {
             if (P.boundaryShape === 'rect') return { minX: Math.min(P.bL, P.bR), maxX: Math.max(P.bL, P.bR), minY: Math.min(P.bT, P.bB), maxY: Math.max(P.bT, P.bB) };
-            if (P.boundaryShape === 'circle') return { minX: P.bCX - P.bRad, maxX: P.bCX + P.bRad, minY: P.bCY - P.bRad, maxY: P.bCY + P.bRad };
+            if (P.boundaryShape === 'circle') return { minX: bcx(P) - P.bRad, maxX: bcx(P) + P.bRad, minY: bcy(P) - P.bRad, maxY: bcy(P) + P.bRad };
             const xs = P.quadPts.map(p => p.x); const ys = P.quadPts.map(p => p.y);
             return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
         };
@@ -3539,7 +3541,7 @@
                         const b = getBounds();
                         return x >= b.minX - margin && x <= b.maxX + margin && y >= b.minY - margin && y <= b.maxY + margin;
                     } else if (boundaryShape === 'circle') {
-                        return dist(x, y, P.bCX, P.bCY) <= P.bRad + margin;
+                        return dist(x, y, bcx(P), bcy(P)) <= P.bRad + margin;
                     }
                     const q = P.quadPts;
                     return pointInPolygon(x, y, q) || q.some((p, i) => distToSegment(x, y, p, q[(i + 1) % 4]) <= margin);
@@ -3549,7 +3551,7 @@
                 const insideBy = (x, y, R) => {
                     if (boundaryShape === 'uv') return !!uvLocate(uvPatch, x, y) && RING.every(([c, sn]) => uvLocate(uvPatch, x + c * R, y + sn * R));
                     if (boundaryShape === 'rect') { const b = getBounds(); return x - b.minX >= R && b.maxX - x >= R && y - b.minY >= R && b.maxY - y >= R; }
-                    if (boundaryShape === 'circle') return dist(x, y, P.bCX, P.bCY) <= P.bRad - R;
+                    if (boundaryShape === 'circle') return dist(x, y, bcx(P), bcy(P)) <= P.bRad - R;
                     const q = P.quadPts;
                     return pointInPolygon(x, y, q) && q.every((p, i) => distToSegment(x, y, p, q[(i + 1) % 4]) >= R);
                 };
@@ -3559,7 +3561,7 @@
                 const edgeDepth = (x, y) => {
                     if (uvDepth) return uvDepth(x, y);
                     if (boundaryShape === 'rect') { const b = getBounds(); return Math.max(0, Math.min(x - b.minX, b.maxX - x, y - b.minY, b.maxY - y)); }
-                    if (boundaryShape === 'circle') return Math.max(0, P.bRad - dist(x, y, P.bCX, P.bCY));
+                    if (boundaryShape === 'circle') return Math.max(0, P.bRad - dist(x, y, bcx(P), bcy(P)));
                     const q = P.quadPts; return pointInPolygon(x, y, q) ? Math.min(...q.map((p, i) => distToSegment(x, y, p, q[(i + 1) % 4]))) : 0;
                 };
                 const margin = Math.max(0, P.edgeMargin || 0);
@@ -3841,7 +3843,7 @@
                 const traceBoundary = () => {
                     ctx.beginPath();
                     const pts = outlinePts();
-                    if (!pts) ctx.arc(X(params.bCX), Y(params.bCY), params.bRad * zoom, 0, Math.PI*2);
+                    if (!pts) ctx.arc(X(bcx(params)), Y(bcy(params)), params.bRad * zoom, 0, Math.PI*2);
                     else { pts.forEach((p, i) => i === 0 ? ctx.moveTo(X(p.x), Y(p.y)) : ctx.lineTo(X(p.x), Y(p.y))); ctx.closePath(); }
                 };
 
@@ -3903,7 +3905,7 @@
                     if (uvMode) inWorld(() => { ctx.lineWidth = 1.5 / zoom; ctx.stroke(uvPatch.edgePath); });
                     else {
                         traceBoundary(); ctx.stroke();
-                        if (boundaryShape === 'circle') { handle(params.bCX, params.bCY, COLORS.boundary); handle(params.bCX, params.bCY - params.bRad, COLORS.boundary); }
+                        if (boundaryShape === 'circle') { handle(bcx(params), bcy(params), COLORS.boundary); handle(bcx(params), bcy(params) - params.bRad, COLORS.boundary); }
                         else (boundaryShape === 'quad' ? params.quadPts : outlinePts()).forEach(p => handle(p.x, p.y, COLORS.boundary));
                     }
                     ctx.restore();
@@ -3996,8 +3998,8 @@
                     ];
                     for (let c of corners) if (near(c.x, c.y)) return { mode: 'boundaryCorner', index: c.id };
                 } else if (boundaryShape === 'circle') {
-                    if (near(params.bCX, params.bCY)) return { mode: 'boundaryCircleMove' };
-                    if (near(params.bCX, params.bCY - params.bRad)) return { mode: 'boundaryCircleSize' };
+                    if (!params.boundaryLock && near(bcx(params), bcy(params))) return { mode: 'boundaryCircleMove' };
+                    if (near(bcx(params), bcy(params) - params.bRad)) return { mode: 'boundaryCircleSize' };
                 } else if (boundaryShape === 'quad') {
                     for (let i = 0; i < 4; i++) if (near(params.quadPts[i].x, params.quadPts[i].y)) return { mode: 'points', key: 'quadPts', index: i };
                 }
@@ -4023,7 +4025,7 @@
                 }
                 const img = getImageRect();
                 if (img && near(img.x + img.w, img.y + img.h)) return { mode: 'imageScale', left: img.x, top: img.y };
-                if (boundaryShape === 'circle' && Math.abs(dist(m.x, m.y, params.bCX, params.bCY) - params.bRad) * view.zoom < HANDLE_RADIUS / 2) return { mode: 'boundaryCircleSize' };
+                if (boundaryShape === 'circle' && Math.abs(dist(m.x, m.y, bcx(params), bcy(params)) - params.bRad) * view.zoom < HANDLE_RADIUS / 2) return { mode: 'boundaryCircleSize' };
                 if (img && m.x >= img.x && m.x <= img.x + img.w && m.y >= img.y && m.y <= img.y + img.h) return { mode: 'imageMove', start: m, startX: params.bgOffsetX, startY: params.bgOffsetY };
                 return null;
             };
@@ -4077,7 +4079,7 @@
                 } else if (drag.mode === 'boundaryCircleMove') {
                     setParams(p => ({ ...p, bCX: mx, bCY: my }));
                 } else if (drag.mode === 'boundaryCircleSize') {
-                    setParams(p => ({ ...p, bRad: Math.max(5, dist(mx, my, p.bCX, p.bCY)) }));
+                    setParams(p => ({ ...p, bRad: Math.max(5, dist(mx, my, bcx(p), bcy(p))) }));
                 } else if (drag.mode === 'radialRadius') {
                     setParams(p => { const rc = ringCentre(p); return { ...p, attractorRadius: +Math.max(0, dist(mx, my, rc.x, rc.y)).toFixed(3) }; });
                 } else if (drag.mode === 'radialMove') {
@@ -4170,7 +4172,7 @@
                     ? `<path d="${Array.from({ length: e.length / 4 }, (_, i) => `M${n(e[i * 4])} ${n(e[i * 4 + 1])}L${n(e[i * 4 + 2])} ${n(e[i * 4 + 3])}`).join('')}"/>`
                     : pts
                     ? `<polygon points="${pts.map(p => `${n(p.x)},${n(p.y)}`).join(' ')}"/>`
-                    : `<circle cx="${n(params.bCX)}" cy="${n(params.bCY)}" r="${n(params.bRad)}"/>`;
+                    : `<circle cx="${n(bcx(params))}" cy="${n(bcy(params))}" r="${n(params.bRad)}"/>`;
                 let svg = `<svg width="${width}mm" height="${height}mm" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
                 svg += `<g transform="translate(${n(-b.minX)}, ${n(-b.minY)})">`;
                 svg += `<g id="boundary" fill="none" stroke="#e11d48" stroke-width="0.1">${outline}</g>`;
@@ -4194,7 +4196,7 @@
                     pts.forEach(p => L.push('0', 'VERTEX', '8', 'BOUNDARY', '10', n(p.x), '20', n(-p.y), '30', '0'));
                     L.push('0', 'SEQEND', '8', 'BOUNDARY');
                 } else {
-                    L.push('0', 'CIRCLE', '8', 'BOUNDARY', '10', n(params.bCX), '20', n(-params.bCY), '30', '0', '40', n(params.bRad));
+                    L.push('0', 'CIRCLE', '8', 'BOUNDARY', '10', n(bcx(params)), '20', n(-bcy(params)), '30', '0', '40', n(params.bRad));
                 }
                 // 孔：圓用 CIRCLE；長孔與圓角矩形用帶 bulge 的閉合 POLYLINE（弧線精確）；橢圓以 72 段折線近似
                 const shape = params.holeShape;
@@ -4519,7 +4521,7 @@
             const sheetClip = (frame, k) => (ctx) => {
                 if (boundaryShape === 'uv') { ctx.setTransform(k, 0, 0, k, -frame.x0 * k, -frame.y0 * k); ctx.clip(uvPatch.fillPath, uvPatch.fillRule); ctx.setTransform(1, 0, 0, 1, 0, 0); return; }
                 const pts = outlinePts(); ctx.beginPath();
-                if (!pts) ctx.arc((params.bCX - frame.x0) * k, (params.bCY - frame.y0) * k, params.bRad * k, 0, Math.PI * 2);
+                if (!pts) ctx.arc((bcx(params) - frame.x0) * k, (bcy(params) - frame.y0) * k, params.bRad * k, 0, Math.PI * 2);
                 else pts.forEach((p, i) => i ? ctx.lineTo((p.x - frame.x0) * k, (p.y - frame.y0) * k) : ctx.moveTo((p.x - frame.x0) * k, (p.y - frame.y0) * k));
                 ctx.closePath(); ctx.clip();
             };
@@ -4846,7 +4848,8 @@
                                 {boundaryShape === 'uv' ? <p className="hint">The boundary is the selected surface, unwrapped flat ({boundW} × {boundH} mm). Choose surfaces in the 3D view.</p> : <>
                                 <Segmented label="Boundary shape" inline options={SHAPES} value={params.boundaryShape} onChange={set('boundaryShape')} />
                                 {boundaryShape === 'circle'
-                                    ? <Param id="diameter" label="Diameter" value={boundW} min={5} max={600} step={0.5} unit="mm" typedMax={5000} onChange={v => resizeBoundary('w', v)} />
+                                    ? <><Param id="diameter" label="Diameter" value={boundW} min={5} max={600} step={0.5} unit="mm" typedMax={5000} onChange={v => resizeBoundary('w', v)} />
+                                        <label className="check"><input type="checkbox" checked={params.boundaryLock} onChange={e => { const on = e.target.checked; setParams(p => on ? { ...p, boundaryLock: true } : { ...p, boundaryLock: false, bCX: p.patternX, bCY: p.patternY }); }} />Lock the circle to the pattern centre</label></>
                                     : <div className="row2">
                                         <Param id="width" label="Width" value={boundW} min={5} max={600} step={0.5} unit="mm" typedMax={5000} onChange={v => resizeBoundary('w', v)} />
                                         <Param id="height" label="Height" value={boundH} min={5} max={600} step={0.5} unit="mm" typedMax={5000} onChange={v => resizeBoundary('h', v)} />

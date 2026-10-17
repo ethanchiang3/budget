@@ -297,7 +297,8 @@
         const PATTERNS = [
             { value: 'grid', label: 'Grid', icon: 'grid-3x3' }, { value: 'hexagonal', label: 'Hex', icon: 'hexagon' },
             { value: 'radial', label: 'Radial', icon: 'circle-dot' }, { value: 'splineGrid', label: 'Spline', icon: 'waves' },
-            { value: 'stripes', label: 'Stripes', icon: 'align-justify' }, { value: 'concentric', label: 'Rings', icon: 'target' }
+            { value: 'stripes', label: 'Stripes', icon: 'align-justify' }, { value: 'concentric', label: 'Rings', icon: 'target' },
+            { value: 'phyllo', label: 'Phyllo', icon: 'flower-2' }, { value: 'phylloSym', label: 'Phyllo sym', icon: 'snowflake' }
         ];
         const FIELDS = [
             { value: 'none', label: 'None', icon: 'ban' }, { value: 'radial', label: 'Radial', icon: 'target' },
@@ -340,6 +341,7 @@
             dispProfile: 'round', dispWidth: 0.5, dispAlign: 'inside', dispBlur: 0, dispPolarity: 'raised', dispRes: 10, dispDome: 100,
             attractorX: 0, attractorY: 0, attractorLock: false,
             dashLen: 0, dashGap: 1.5, stripeEqual: false, stripeLen: 0, stripeEnd: 0,
+            phylloAngle: 137.508, phylloInner: 0,
             rotation: 0, mirrorCount: 6,
             patternX: 0, patternY: 0, scaleHoles: true,
             cvs: [ {x: -50, y: -20}, {x: -20, y: 30}, {x: 15, y: -25}, {x: 50, y: 20} ],
@@ -3669,6 +3671,24 @@
                             }
                             for (let i = 0; i < fullCount; i++) ringDot((i/fullCount)*Math.PI*2);
                         }
+                    } else if (patternType === 'phyllo' || patternType === 'phylloSym') {
+                        // 向日葵（Vogel）螺旋：第 n 點在半徑 c·√n、角度 n·黃金角；c 由孔距決定（每點面積 π·c²）。對稱版是 D_K：
+                        // 只在 1/(2K) 扇形內用黃金角排點，再轉 K 次並鏡射，整體有 K 重旋轉對稱加鏡射對稱
+                        const bb = getBounds(), [cx0, cy0] = place(0, 0), rMax = Math.max(...[[bb.minX, bb.minY], [bb.maxX, bb.minY], [bb.minX, bb.maxY], [bb.maxX, bb.maxY]].map(([x, y]) => Math.hypot(x - cx0, y - cy0)));
+                        const c = Math.max(0.05, P.spacingX) / Math.sqrt(Math.PI), inner = Math.max(0, P.phylloInner), ga = P.phylloAngle * Math.PI / 180, nMax = Math.min(40000, Math.ceil((rMax / c) ** 2) + 1);
+                        row = 0;
+                        if (patternType === 'phyllo') {
+                            for (let n = 1; n <= nMax; n++) { const r = c * Math.sqrt(n); if (r < inner) continue; addDot(r * Math.cos(n * ga), r * Math.sin(n * ga)); }
+                        } else {
+                            const K = Math.max(1, Math.round(P.mirrorCount)), half = Math.PI / K, per = 2 * K;
+                            for (let n = 1; n <= Math.ceil(nMax / per); n++) {
+                                const r = c * Math.sqrt(per * n); if (r < inner) continue;
+                                const a = (n * ga) % half;
+                                // 靠近鏡射軸或扇形邊界的點會和鏡射點重疊：間距不足就略過
+                                if (2 * r * Math.sin(Math.min(a, half - a)) < 0.8 * P.spacingX) continue;
+                                for (let k = 0; k < K; k++) { addDot(r * Math.cos(2 * half * k + a), r * Math.sin(2 * half * k + a)); addDot(r * Math.cos(2 * half * k - a), r * Math.sin(2 * half * k - a)); }
+                            }
+                        }
                     } else if (patternType === 'stripes' || patternType === 'concentric') {
                         // 連續線條：條紋是切到邊界的長槽孔，同心圓是完整（或切到邊界的）圓弧槽，孔寬跟隨尺寸場
                         const baseR = margin + P.baseDiameter / 2;
@@ -4556,7 +4576,7 @@
                 return square && Math.abs(params.stagger - 0.5) < 1e-6 ? `R${d} T${fmt(params.spacingX)}` : `R${d} staggered`;
             })();
 
-            const arraySummary = ((params.holeShape === 'round' && designation) || (patternType === 'radial' ? `Radial · ${params.gridRows} rings` : patternType === 'concentric' ? `Rings · ${fmt(params.spacingY)} mm` : patternType === 'stripes' ? `Stripes · ${fmt(params.spacingY)} mm` : patternType === 'splineGrid' ? `Spline · ${params.gridCols}×${params.gridRows}` : PATTERNS.find(pt => pt.value === patternType).label)) + (params.rotation ? ` · ${fmt(params.rotation, 1)}°` : '');
+            const arraySummary = ((params.holeShape === 'round' && designation) || (patternType === 'radial' ? `Radial · ${params.gridRows} rings` : patternType === 'concentric' ? `Rings · ${fmt(params.spacingY)} mm` : patternType === 'phyllo' || patternType === 'phylloSym' ? `${PATTERNS.find(pt => pt.value === patternType).label} · ${fmt(params.spacingX)} mm` : patternType === 'stripes' ? `Stripes · ${fmt(params.spacingY)} mm` : patternType === 'splineGrid' ? `Spline · ${params.gridCols}×${params.gridRows}` : PATTERNS.find(pt => pt.value === patternType).label)) + (params.rotation ? ` · ${fmt(params.rotation, 1)}°` : '');
             const holeSummary = fieldOn ? `${FIELDS.find(f => f.value === attractorMode).label} · Ø${fmt(params.minDiameter)}–${fmt(params.baseDiameter)}` : `Ø${fmt(params.baseDiameter)}`;
             const roundHoles = params.holeShape === 'round';
             const orientLabel = ORIENTS.find(o => o.value === params.holeOrient).label;
@@ -4734,7 +4754,15 @@
                             <Section icon="grid-3x3" title="Array" summary={arraySummary} open={openSections.array} onToggle={toggleSection('array')}>
                                 <Segmented label="Array type" cols={3} options={PATTERNS} value={patternType} onChange={v => setParams(p => ({ ...p, patternType: v, holeShape: p.holeShape === 'round' && (v === 'stripes' || v === 'concentric') ? 'slot' : p.holeShape }))} />
                                 {!mode3D && params.fitFrame && <div className="note"><Icon name="info" size={13} /><span>The pattern is still sized for a {fmt(params.fitFrame.w, 1)} × {fmt(params.fitFrame.h, 1)} mm surface. <button className="link" onClick={() => applyFit(false)}>Fit it to this panel</button></span></div>}
-                                {patternType === 'stripes' || patternType === 'concentric' ? <>
+                                {patternType === 'phyllo' || patternType === 'phylloSym' ? <>
+                                    <div className="row2">
+                                        <Param id="phyllo-pitch" label="Spacing" value={params.spacingX} min={0.3} max={30} step={0.1} decimals={1} unit="mm" typedMax={200} onChange={set('spacingX')} />
+                                        <Param id="phyllo-inner" label="Centre clear" value={params.phylloInner} min={0} max={60} step={0.5} decimals={1} unit="mm" typedMax={500} onChange={set('phylloInner')} />
+                                    </div>
+                                    {patternType === 'phylloSym' && <Param id="mirror" label="Symmetry" value={params.mirrorCount} min={1} max={32} step={1} decimals={0} unit="×" onChange={set('mirrorCount')} />}
+                                    <Param id="phyllo-angle" label="Divergence angle" value={params.phylloAngle} min={90} max={180} step={0.001} decimals={3} unit="°" onChange={set('phylloAngle')} />
+                                    <p className="hint">{patternType === 'phyllo' ? 'Sunflower spiral (phyllotaxis): each hole sits at radius ∝ √n and n × the golden angle, so the spacing stays even. ' : 'Symmetric phyllotaxis: the golden-angle spiral is laid in one sector, then rotated and mirrored, so the pattern has the chosen rotational and mirror symmetry. '}Set Max Ø / Min Ø with a Radial size field to make holes grow outward, as in the Onshape example. The count always fills the surface.</p>
+                                </> : patternType === 'stripes' || patternType === 'concentric' ? <>
                                     <div>
                                         <Param id="ring-pitch" label={patternType === 'stripes' ? 'Stripe pitch' : 'Ring pitch'} value={params.spacingY} min={0.3} max={30} step={0.5} unit="mm" typedMax={200} onChange={set('spacingY')} />
                                     </div>
@@ -4760,7 +4788,7 @@
                                     {patternType !== 'grid' && <Param id="stagger" label="Row stagger" value={params.stagger} min={0} max={1} step={0.01} decimals={2} onChange={set('stagger')} />}
                                     {patternType === 'splineGrid' && <p className="hint"><span className="legend" style={{ background: COLORS.splineA }}></span>Drag the amber control points to bend the rows.</p>}
                                 </>}
-                                {patternType !== 'splineGrid' && patternType !== 'stripes' && patternType !== 'concentric' && <div><button className="btn-ghost" title="Add or remove columns and rows so the array just covers the boundary; the pitch stays" onClick={fillBoundary}><Icon name="maximize" size={14} />{uvPatch ? 'Fill surface' : 'Fill boundary'}</button></div>}
+                                {patternType !== 'splineGrid' && patternType !== 'stripes' && patternType !== 'concentric' && patternType !== 'phyllo' && patternType !== 'phylloSym' && <div><button className="btn-ghost" title="Add or remove columns and rows so the array just covers the boundary; the pitch stays" onClick={fillBoundary}><Icon name="maximize" size={14} />{uvPatch ? 'Fill surface' : 'Fill boundary'}</button></div>}
                                 <div className="subhead">Pattern transform</div>
                                 <ScaleControl onStart={scaleStart} onScale={scaleBy} onEnd={scaleEnd} />
                                 <label className="check"><input type="checkbox" checked={params.scaleHoles} onChange={e => set('scaleHoles')(e.target.checked)} />Scale hole sizes too</label>
